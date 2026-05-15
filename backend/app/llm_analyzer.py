@@ -123,7 +123,10 @@ def _build_graph_prompt(username: str, repos: list[RepoSummary]) -> str:
         ],
         "output_schema": schema,
         "github_username": username,
-        "repositories": [_repo_payload(repo, include_readme=False, include_file_tree=False) for repo in repos],
+        "repositories": [
+            _repo_payload(repo, include_readme=False, include_file_tree=False)
+            for repo in repos
+        ],
     }
     return json.dumps(payload, ensure_ascii=False)
 
@@ -153,7 +156,9 @@ def _build_file_selection_prompt(repo: RepoSummary, candidate_paths: list[str]) 
     return json.dumps(instruction, ensure_ascii=False)
 
 
-def _important_files_payload(important_files: list[SelectedFile]) -> list[dict[str, str]]:
+def _important_files_payload(
+    important_files: list[SelectedFile],
+) -> list[dict[str, str]]:
     return [
         {
             "path": file.path,
@@ -164,7 +169,10 @@ def _important_files_payload(important_files: list[SelectedFile]) -> list[dict[s
     ]
 
 
-def _build_single_repo_prompt(repo: RepoSummary, important_files: list[SelectedFile] | None = None) -> str:
+def _build_single_repo_prompt(
+    repo: RepoSummary,
+    important_files: list[SelectedFile] | None = None,
+) -> str:
     schema = {
         "repo_id": "GitHub repo id from input",
         "project_id": "repo_<repo_id>",
@@ -207,8 +215,15 @@ def _build_single_repo_prompt(repo: RepoSummary, important_files: list[SelectedF
             "Return strict JSON only.",
         ],
         "output_schema": schema,
-        "repository": _repo_payload(repo, include_readme=True, include_file_tree=True, file_tree_limit=120),
-        "important_files_read_by_github_contents_api": _important_files_payload(important_files or []),
+        "repository": _repo_payload(
+            repo,
+            include_readme=True,
+            include_file_tree=True,
+            file_tree_limit=120,
+        ),
+        "important_files_read_by_github_contents_api": _important_files_payload(
+            important_files or []
+        ),
     }
     return json.dumps(instruction, ensure_ascii=False)
 
@@ -228,78 +243,103 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         try:
             return json.loads(match.group(0))
         except json.JSONDecodeError as exc:
-            raise LLMAnalysisError(f"Upstage 응답 JSON 파싱에 실패했습니다: {exc}") from exc
+            raise LLMAnalysisError(
+                f"Upstage 응답 JSON 파싱에 실패했습니다: {exc}. 응답 일부: {match.group(0)[:700]}"
+            ) from exc
 
 
 def _upstage_client() -> tuple[OpenAI, str]:
     api_key = os.getenv("UPSTAGE_API_KEY", "").strip()
     if not api_key:
-        raise LLMAnalysisError("UPSTAGE_API_KEY가 설정되어 있지 않습니다. backend/.env에 API 키를 넣어주세요.")
+        raise LLMAnalysisError(
+            "UPSTAGE_API_KEY가 설정되어 있지 않습니다. backend/.env에 API 키를 넣어주세요."
+        )
 
     model = os.getenv("UPSTAGE_MODEL", "solar-mini").strip() or "solar-mini"
     base_url = os.getenv("UPSTAGE_BASE_URL", "https://api.upstage.ai/v1").strip()
-    client = OpenAI(api_key=api_key, base_url=base_url, timeout=45.0, max_retries=0)
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=45.0,
+        max_retries=0,
+    )
     return client, model
+
+
+def _chat_json_completion(
+    *,
+    client: OpenAI,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    error_context: str,
+) -> dict[str, Any]:
+    """Call Upstage/Solar in JSON object mode and parse the result.
+
+    Without response_format, small models may return JSON-looking text with small syntax
+    errors such as missing commas. JSON object mode significantly reduces that failure.
+    """
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+            response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        raise LLMAnalysisError(f"{error_context} 호출에 실패했습니다: {exc}") from exc
+
+    content = completion.choices[0].message.content if completion.choices else None
+    if not content:
+        raise LLMAnalysisError(f"{error_context}가 빈 응답을 반환했습니다.")
+
+    return _extract_json_object(content)
 
 
 def _call_upstage_graph(username: str, repos: list[RepoSummary]) -> dict[str, Any]:
     client, model = _upstage_client()
-    try:
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": GRAPH_SYSTEM_PROMPT},
-                {"role": "user", "content": _build_graph_prompt(username, repos)},
-            ],
-            temperature=0.1,
-        )
-    except Exception as exc:
-        raise LLMAnalysisError(f"Upstage Graph API 호출에 실패했습니다: {exc}") from exc
-
-    content = completion.choices[0].message.content if completion.choices else None
-    if not content:
-        raise LLMAnalysisError("Upstage Graph API가 빈 응답을 반환했습니다.")
-    return _extract_json_object(content)
+    return _chat_json_completion(
+        client=client,
+        model=model,
+        system_prompt=GRAPH_SYSTEM_PROMPT,
+        user_prompt=_build_graph_prompt(username, repos),
+        temperature=0.1,
+        error_context="Upstage Graph API",
+    )
 
 
-def _call_upstage_file_selection(repo: RepoSummary, candidate_paths: list[str]) -> dict[str, Any]:
+def _call_upstage_file_selection(
+    repo: RepoSummary,
+    candidate_paths: list[str],
+) -> dict[str, Any]:
     client, model = _upstage_client()
-    try:
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": FILE_SELECT_SYSTEM_PROMPT},
-                {"role": "user", "content": _build_file_selection_prompt(repo, candidate_paths)},
-            ],
-            temperature=0.1,
-        )
-    except Exception as exc:
-        raise LLMAnalysisError(f"Upstage 파일 선택 API 호출에 실패했습니다: {exc}") from exc
-
-    content = completion.choices[0].message.content if completion.choices else None
-    if not content:
-        raise LLMAnalysisError("Upstage 파일 선택 API가 빈 응답을 반환했습니다.")
-    return _extract_json_object(content)
+    return _chat_json_completion(
+        client=client,
+        model=model,
+        system_prompt=FILE_SELECT_SYSTEM_PROMPT,
+        user_prompt=_build_file_selection_prompt(repo, candidate_paths),
+        temperature=0.1,
+        error_context="Upstage 파일 선택 API",
+    )
 
 
-def _call_upstage_single(repo: RepoSummary, important_files: list[SelectedFile] | None = None) -> dict[str, Any]:
+def _call_upstage_single(
+    repo: RepoSummary,
+    important_files: list[SelectedFile] | None = None,
+) -> dict[str, Any]:
     client, model = _upstage_client()
-    try:
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": SINGLE_REPO_SYSTEM_PROMPT},
-                {"role": "user", "content": _build_single_repo_prompt(repo, important_files or [])},
-            ],
-            temperature=0.2,
-        )
-    except Exception as exc:
-        raise LLMAnalysisError(f"Upstage API 호출에 실패했습니다: {exc}") from exc
-
-    content = completion.choices[0].message.content if completion.choices else None
-    if not content:
-        raise LLMAnalysisError("Upstage API가 빈 응답을 반환했습니다.")
-    return _extract_json_object(content)
+    return _chat_json_completion(
+        client=client,
+        model=model,
+        system_prompt=SINGLE_REPO_SYSTEM_PROMPT,
+        user_prompt=_build_single_repo_prompt(repo, important_files or []),
+        temperature=0.2,
+        error_context="Upstage 상세 분석 API",
+    )
 
 
 def _as_str_list(value: Any, *, max_items: int = 8) -> list[str]:
@@ -329,7 +369,10 @@ def _project_id(repo: RepoSummary) -> str:
     return f"repo_{repo.id}"
 
 
-def analyze_project_graph_with_upstage(username: str, repos: list[RepoSummary]) -> ScanResponse:
+def analyze_project_graph_with_upstage(
+    username: str,
+    repos: list[RepoSummary],
+) -> ScanResponse:
     """Create a lightweight repo relationship graph with Upstage/Solar.
 
     This runs before deep repository analysis. It should be fast because it only uses
@@ -354,8 +397,15 @@ def analyze_project_graph_with_upstage(username: str, repos: list[RepoSummary]) 
                 "language": repo.primary_language,
                 "topics": repo.topics,
                 "updated_at": repo.updated_at,
-                "short_summary": str(summary_by_id.get(_project_id(repo), {}).get("short_summary") or repo.description or ""),
-                "short_domain": _as_str_list(summary_by_id.get(_project_id(repo), {}).get("short_domain"), max_items=3),
+                "short_summary": str(
+                    summary_by_id.get(_project_id(repo), {}).get("short_summary")
+                    or repo.description
+                    or ""
+                ),
+                "short_domain": _as_str_list(
+                    summary_by_id.get(_project_id(repo), {}).get("short_domain"),
+                    max_items=3,
+                ),
             },
         )
         for repo in repos
@@ -376,16 +426,29 @@ def analyze_project_graph_with_upstage(username: str, repos: list[RepoSummary]) 
     for raw_edge in data.get("edges") or []:
         if not isinstance(raw_edge, dict):
             continue
+
         source = str(raw_edge.get("source_project_id") or "").strip()
         target = str(raw_edge.get("target_project_id") or "").strip()
+
         if source not in valid_ids or target not in valid_ids or source == target:
             continue
+
         relation = str(raw_edge.get("relation") or "similar_to").strip()
         if relation not in allowed_relations:
             relation = "similar_to"
+
         weight = _clamp_score(raw_edge.get("weight", 0.6))
         reason = str(raw_edge.get("reason") or relation).strip()
-        edges.append(GraphEdge(source=source, target=target, relation=relation, weight=weight, meta={"reason": reason}))
+
+        edges.append(
+            GraphEdge(
+                source=source,
+                target=target,
+                relation=relation,
+                weight=weight,
+                meta={"reason": reason},
+            )
+        )
         related[source].add(target)
         related[target].add(source)
         reasons[source].append(reason)
@@ -395,17 +458,41 @@ def analyze_project_graph_with_upstage(username: str, repos: list[RepoSummary]) 
     for index, raw_next in enumerate(data.get("next_builds") or [], start=1):
         if not isinstance(raw_next, dict):
             continue
-        project_ids = [pid for pid in _as_str_list(raw_next.get("project_ids"), max_items=5) if pid in valid_ids]
+
+        project_ids = [
+            pid
+            for pid in _as_str_list(raw_next.get("project_ids"), max_items=5)
+            if pid in valid_ids
+        ]
         if len(project_ids) < 2:
             continue
+
         next_id = str(raw_next.get("id") or f"next_{index}").strip()
         if not next_id.startswith("next_"):
             next_id = f"next_{index}"
+
         label = str(raw_next.get("label") or f"Next Build {index}").strip()
         reason = str(raw_next.get("reason") or "여러 repo를 결합할 수 있습니다.").strip()
-        nodes.append(GraphNode(id=next_id, label=label, type="NextBuild", meta={"reason": reason, "project_ids": project_ids}))
+
+        nodes.append(
+            GraphNode(
+                id=next_id,
+                label=label,
+                type="NextBuild",
+                meta={"reason": reason, "project_ids": project_ids},
+            )
+        )
+
         for pid in project_ids:
-            edges.append(GraphEdge(source=pid, target=next_id, relation="can_create", weight=0.85, meta={"reason": reason}))
+            edges.append(
+                GraphEdge(
+                    source=pid,
+                    target=next_id,
+                    relation="can_create",
+                    weight=0.85,
+                    meta={"reason": reason},
+                )
+            )
 
     previews = [
         ProjectPreview(
@@ -418,10 +505,17 @@ def analyze_project_graph_with_upstage(username: str, repos: list[RepoSummary]) 
         for repo in repos
     ]
 
-    return ScanResponse(username=username, projects=previews, graph=ProjectGraph(nodes=nodes, edges=edges))
+    return ScanResponse(
+        username=username,
+        projects=previews,
+        graph=ProjectGraph(nodes=nodes, edges=edges),
+    )
 
 
-def select_important_files_with_upstage(repo: RepoSummary, candidate_paths: list[str]) -> list[dict[str, str]]:
+def select_important_files_with_upstage(
+    repo: RepoSummary,
+    candidate_paths: list[str],
+) -> list[dict[str, str]]:
     """Ask Upstage/Solar to select source/config files worth reading.
 
     This is not a rule-based fallback. Rules are only used before this step by GitHubClient
@@ -432,33 +526,52 @@ def select_important_files_with_upstage(repo: RepoSummary, candidate_paths: list
 
     data = _call_upstage_file_selection(repo, candidate_paths)
     selected_raw = data.get("selected_files")
+
     if not isinstance(selected_raw, list):
         raise LLMAnalysisError("Upstage 파일 선택 응답에 selected_files 배열이 없습니다.")
 
     allowed = set(candidate_paths)
     selected: list[dict[str, str]] = []
     seen: set[str] = set()
+
     for item in selected_raw:
         if not isinstance(item, dict):
             continue
+
         path = str(item.get("path") or "").strip()
         reason = str(item.get("reason") or "").strip()
+
         if not path or path not in allowed or path in seen:
             continue
+
         seen.add(path)
-        selected.append({"path": path, "reason": reason or "LLM이 핵심 분석 파일로 선택했습니다."})
+        selected.append(
+            {
+                "path": path,
+                "reason": reason or "LLM이 핵심 분석 파일로 선택했습니다.",
+            }
+        )
+
         if len(selected) >= 8:
             break
 
     if not selected:
         raise LLMAnalysisError("Upstage가 유효한 핵심 파일을 선택하지 못했습니다.")
+
     return selected
 
 
-def _project_from_llm(project: dict[str, Any], repo: RepoSummary, selected_files: list[SelectedFile] | None = None) -> ProjectReport:
+def _project_from_llm(
+    project: dict[str, Any],
+    repo: RepoSummary,
+    selected_files: list[SelectedFile] | None = None,
+) -> ProjectReport:
     repo_id = str(project.get("repo_id") or "").strip()
+
     if repo_id != repo.id:
-        raise LLMAnalysisError(f"Upstage 응답 repo_id가 입력 repo와 다릅니다: {repo_id} != {repo.id}")
+        raise LLMAnalysisError(
+            f"Upstage 응답 repo_id가 입력 repo와 다릅니다: {repo_id} != {repo.id}"
+        )
 
     dna_raw = project.get("dna") or {}
     report_raw = project.get("report") or {}
@@ -467,27 +580,37 @@ def _project_from_llm(project: dict[str, Any], repo: RepoSummary, selected_files
         domain=_as_str_list(dna_raw.get("domain"), max_items=3) or ["미분류"],
         target_user=str(dna_raw.get("target_user") or "대상 사용자 추가 분석 필요"),
         core_problem=str(dna_raw.get("core_problem") or "핵심 문제 정의 추가 분석 필요"),
-        core_features=_as_str_list(dna_raw.get("core_features"), max_items=6) or ["핵심 기능 추가 분석 필요"],
-        tech_stack=_as_str_list(dna_raw.get("tech_stack"), max_items=8) or repo.languages or [repo.primary_language or "Unknown"],
+        core_features=_as_str_list(dna_raw.get("core_features"), max_items=6)
+        or ["핵심 기능 추가 분석 필요"],
+        tech_stack=_as_str_list(dna_raw.get("tech_stack"), max_items=8)
+        or repo.languages
+        or [repo.primary_language or "Unknown"],
         summary=str(dna_raw.get("summary") or repo.description or repo.name),
     )
 
     assets: list[AssetCard] = []
+
     for asset_raw in project.get("assets") or []:
         if not isinstance(asset_raw, dict):
             continue
+
         name = str(asset_raw.get("name") or "").strip()
         if not name:
             continue
+
         assets.append(
             AssetCard(
                 name=name,
                 type=str(asset_raw.get("type") or "Asset"),
                 reuse_score=_clamp_score(asset_raw.get("reuse_score", 0.5)),
                 reusable_for=_as_str_list(asset_raw.get("reusable_for"), max_items=6),
-                improvement_needed=_as_str_list(asset_raw.get("improvement_needed"), max_items=6),
+                improvement_needed=_as_str_list(
+                    asset_raw.get("improvement_needed"),
+                    max_items=6,
+                ),
             )
         )
+
     if not assets:
         raise LLMAnalysisError(f"{repo.name} repository의 asset 분석 결과가 비어 있습니다.")
 
@@ -498,7 +621,10 @@ def _project_from_llm(project: dict[str, Any], repo: RepoSummary, selected_files
         modify=_as_str_list(report_raw.get("modify"), max_items=6),
         drop=_as_str_list(report_raw.get("drop"), max_items=6),
         next_builds=_as_str_list(report_raw.get("next_builds"), max_items=6),
-        file_tree_suggestion=_as_str_list(report_raw.get("file_tree_suggestion"), max_items=14),
+        file_tree_suggestion=_as_str_list(
+            report_raw.get("file_tree_suggestion"),
+            max_items=14,
+        ),
     )
 
     return ProjectReport(
@@ -511,7 +637,14 @@ def _project_from_llm(project: dict[str, Any], repo: RepoSummary, selected_files
     )
 
 
-def analyze_repository_with_upstage(repo: RepoSummary, important_files: list[SelectedFile] | None = None) -> ProjectReport:
+def analyze_repository_with_upstage(
+    repo: RepoSummary,
+    important_files: list[SelectedFile] | None = None,
+) -> ProjectReport:
     """Analyze a single repository with Upstage/Solar. No rule-based fallback is used."""
     data = _call_upstage_single(repo, important_files or [])
-    return _project_from_llm(data, repo, selected_files=important_files or [])
+    return _project_from_llm(
+        data,
+        repo,
+        selected_files=important_files or [],
+    )
