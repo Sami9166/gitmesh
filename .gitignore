@@ -1,0 +1,94 @@
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+env/
+ENV/
+
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# =========================
+# FastAPI / Uvicorn
+# =========================
+*.log
+logs/
+
+# =========================
+# Node / Web
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# Static server / cache
+# =========================
+.cache/
+.parcel-cache/
+.vite/
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Secrets / keys
+# =========================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# =========================
+# Local data / temp
+# =========================
+tmp/
+temp/
+.cache/
+local_data/
+*.sqlite
+*.db
+
+# =========================
+# Project-specific
+# =========================
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.venv/
