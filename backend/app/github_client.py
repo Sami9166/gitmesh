@@ -55,9 +55,9 @@ class GitHubClient:
             response.raise_for_status()
             return response.json()
 
-    async def list_public_repos(self, username: str, limit: int = 5) -> list[dict[str, Any]]:
-        # MVP safety cap: scan only the top 5 recently updated public repositories.
-        limit = min(max(limit, 1), 5)
+    async def list_public_repos(self, username: str, limit: int = 10) -> list[dict[str, Any]]:
+        # GitMesh GitHub graph cap: recently updated top 10 public repositories.
+        limit = min(max(limit, 1), 10)
         repos: list[dict[str, Any]] = []
         page = 1
 
@@ -122,11 +122,18 @@ class GitHubClient:
             return False
         if normalized.startswith(EXCLUDED_PREFIXES):
             return False
-        if any(part in {"node_modules", "dist", "build", ".git", ".venv", "venv", "__pycache__"} for part in normalized.split("/")):
+        if any(
+            part in {
+                "node_modules", "dist", "build", ".git", ".venv", "venv", "__pycache__",
+            }
+            for part in normalized.split("/")
+        ):
             return False
+
         lower = normalized.lower()
         if lower.endswith(EXCLUDED_SUFFIXES):
             return False
+
         filename = normalized.split("/")[-1]
         if filename in TEXT_FILENAMES:
             return True
@@ -134,6 +141,7 @@ class GitHubClient:
             return True
         if "." not in filename:
             return filename in {"Dockerfile", "Makefile"}
+
         ext = "." + filename.rsplit(".", 1)[-1].lower()
         return ext in TEXT_EXTENSIONS
 
@@ -141,21 +149,23 @@ class GitHubClient:
     def selectable_file_paths(cls, file_tree: list[str], *, max_paths: int = 240) -> list[str]:
         return [path for path in file_tree if cls.is_selectable_path(path)][:max_paths]
 
-    async def get_file_content(self, full_name: str, path: str, max_chars: int = 5000) -> str:
+    async def get_file_content(self, full_name: str, path: str, max_chars: int = 2500) -> str:
         if not self.is_selectable_path(path):
             return ""
+
         try:
             encoded_path = quote(path, safe="/")
             data = await self._get(f"/repos/{full_name}/contents/{encoded_path}")
             if data.get("type") != "file":
                 return ""
-            # Skip very large files before decoding. GitHub returns size in bytes.
             if int(data.get("size") or 0) > 250_000:
                 return ""
+
             content = data.get("content", "")
             encoding = data.get("encoding")
             if encoding != "base64" or not content:
                 return ""
+
             text = base64.b64decode(content).decode("utf-8", errors="ignore")
             return text[:max_chars]
         except Exception:
@@ -166,9 +176,9 @@ class GitHubClient:
         full_name: str,
         selected_files: list[dict[str, str]],
         *,
-        max_files: int = 8,
-        max_chars_per_file: int = 5000,
-        max_total_chars: int = 30000,
+        max_files: int = 4,
+        max_chars_per_file: int = 2500,
+        max_total_chars: int = 10000,
     ) -> list[SelectedFile]:
         results: list[SelectedFile] = []
         total_chars = 0
@@ -177,15 +187,23 @@ class GitHubClient:
         for item in selected_files[:max_files]:
             path = str(item.get("path") or "").strip()
             reason = str(item.get("reason") or "").strip()
+
             if not path or path in seen or not self.is_selectable_path(path):
                 continue
+
             seen.add(path)
             remaining = max_total_chars - total_chars
             if remaining <= 0:
                 break
-            content = await self.get_file_content(full_name, path, max_chars=min(max_chars_per_file, remaining))
+
+            content = await self.get_file_content(
+                full_name,
+                path,
+                max_chars=min(max_chars_per_file, remaining),
+            )
             if not content.strip():
                 continue
+
             total_chars += len(content)
             results.append(SelectedFile(path=path, reason=reason, content_excerpt=content))
 

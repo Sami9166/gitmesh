@@ -10,6 +10,14 @@ class SelectedFile(BaseModel):
     content_excerpt: str = ""
 
 
+class UploadedFileSummary(BaseModel):
+    id: str
+    name: str
+    size: int = 0
+    mime_type: str | None = None
+    content_excerpt: str = ""
+
+
 class RepoSummary(BaseModel):
     id: str
     name: str
@@ -75,7 +83,16 @@ class ProjectPreview(BaseModel):
 class GraphNode(BaseModel):
     id: str
     label: str
-    type: Literal["Project", "Domain", "Tech", "Asset", "Limitation", "NextBuild", "Topic"]
+    type: Literal[
+        "Project",
+        "File",
+        "Domain",
+        "Tech",
+        "Asset",
+        "Limitation",
+        "NextBuild",
+        "Topic",
+    ]
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -98,8 +115,14 @@ class ScanResponse(BaseModel):
     graph: ProjectGraph
 
 
+class FileScanResponse(BaseModel):
+    scan_id: str
+    username: str = "uploaded-files"
+    projects: list[ProjectPreview]
+    graph: ProjectGraph
+
+
 class AnalyzeResponse(BaseModel):
-    # Kept for compatibility with older frontend versions.
     username: str
     projects: list[ProjectReport]
     graph: ProjectGraph

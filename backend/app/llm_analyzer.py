@@ -11,6 +11,7 @@ from openai import OpenAI
 from .models import (
     AssetCard,
     DevelopReport,
+    FileScanResponse,
     GraphEdge,
     GraphNode,
     ProjectDNA,
@@ -20,6 +21,7 @@ from .models import (
     RepoSummary,
     ScanResponse,
     SelectedFile,
+    UploadedFileSummary,
 )
 
 
@@ -52,180 +54,19 @@ Return ONLY a valid JSON object. Do not include markdown, code fences, comments,
 Use Korean for reason values.
 """.strip()
 
+FILE_GRAPH_SYSTEM_PROMPT = """
+You are GitMesh File Graph Agent.
+The user uploaded multiple project-related files. Infer relationships among the files and create a lightweight file graph.
+Return ONLY a valid JSON object. Do not include markdown, code fences, comments, or prose outside JSON.
+Use Korean for reason, label, and summary values.
+""".strip()
 
-def _repo_payload(
-    repo: RepoSummary,
-    *,
-    include_readme: bool = True,
-    include_file_tree: bool = True,
-    file_tree_limit: int = 120,
-) -> dict[str, Any]:
-    readme = repo.readme_text or ""
-    payload = {
-        "repo_id": repo.id,
-        "project_id": f"repo_{repo.id}",
-        "name": repo.name,
-        "full_name": repo.full_name,
-        "html_url": repo.html_url,
-        "description": repo.description,
-        "primary_language": repo.primary_language,
-        "languages": repo.languages[:10],
-        "topics": repo.topics[:15],
-        "stars": repo.stars,
-        "forks": repo.forks,
-        "default_branch": repo.default_branch,
-        "updated_at": repo.updated_at,
-    }
-    if include_file_tree:
-        payload["file_tree_excerpt"] = repo.file_tree[:file_tree_limit]
-    if include_readme:
-        payload["readme_excerpt"] = readme[:4500]
-    return payload
-
-
-def _build_graph_prompt(username: str, repos: list[RepoSummary]) -> str:
-    schema = {
-        "project_summaries": [
-            {
-                "project_id": "repo_<repo_id from input>",
-                "short_summary": "repo의 용도 1문장",
-                "short_domain": ["도메인 키워드 최대 3개"],
-            }
-        ],
-        "edges": [
-            {
-                "source_project_id": "repo_<repo_id from input>",
-                "target_project_id": "repo_<repo_id from input>",
-                "relation": "similar_to | shares_domain_with | shares_tech_with | can_collaborate_with | can_reuse_asset_from | can_improve_with",
-                "weight": 0.0,
-                "reason": "두 repo를 연결한 구체적 이유",
-            }
-        ],
-        "next_builds": [
-            {
-                "id": "next_1",
-                "label": "두 개 이상의 repo를 결합해 만들 수 있는 다음 프로젝트명",
-                "project_ids": ["repo_<repo_id>", "repo_<repo_id>"],
-                "reason": "왜 이 next build가 가능한지",
-            }
-        ],
-    }
-
-    payload = {
-        "task": "Create a lightweight GitMesh repository relationship graph. Do not perform deep repo analysis.",
-        "rules": [
-            "Use only the repository metadata in the input: name, description, language, topics, stars, forks, and updated_at. Do not assume file contents.",
-            "All source_project_id and target_project_id must exactly match one of the input project_id values.",
-            "Prefer meaningful relationships over many weak edges. Create at most 8 edges.",
-            "If repositories are unrelated, create fewer edges rather than forcing relationships.",
-            "Create at most 3 next_builds. A next_build must combine at least 2 repositories.",
-            "Return strict JSON only.",
-        ],
-        "output_schema": schema,
-        "github_username": username,
-        "repositories": [
-            _repo_payload(repo, include_readme=False, include_file_tree=False)
-            for repo in repos
-        ],
-    }
-    return json.dumps(payload, ensure_ascii=False)
-
-
-def _build_file_selection_prompt(repo: RepoSummary, candidate_paths: list[str]) -> str:
-    schema = {
-        "selected_files": [
-            {
-                "path": "path exactly from candidate_paths",
-                "reason": "왜 이 파일이 프로젝트 분석에 중요한지",
-            }
-        ]
-    }
-    instruction = {
-        "task": "Select up to 8 important files to read before deep GitMesh repo analysis.",
-        "rules": [
-            "Choose files only from candidate_paths. Paths must match exactly.",
-            "Prefer entrypoints, API routes, agent/workflow logic, service modules, UI entrypoints, configuration and dependency files.",
-            "Do not select generated files, lock files, images, fonts, binary assets, dependency folders, build outputs, or test snapshots.",
-            "If README already explains the repo well, still select source/config files that verify architecture and implementation.",
-            "Return strict JSON only.",
-        ],
-        "output_schema": schema,
-        "repository": _repo_payload(repo, include_readme=True, include_file_tree=False),
-        "candidate_paths": candidate_paths[:240],
-    }
-    return json.dumps(instruction, ensure_ascii=False)
-
-
-def _important_files_payload(
-    important_files: list[SelectedFile],
-) -> list[dict[str, str]]:
-    return [
-        {
-            "path": file.path,
-            "selection_reason": file.reason,
-            "content_excerpt": file.content_excerpt[:5000],
-        }
-        for file in important_files[:8]
-    ]
-
-
-def _build_single_repo_prompt(
-    repo: RepoSummary,
-    important_files: list[SelectedFile] | None = None,
-) -> str:
-    schema = {
-        "repo_id": "GitHub repo id from input",
-        "project_id": "repo_<repo_id>",
-        "dna": {
-            "domain": ["최대 3개"],
-            "target_user": "주요 사용자",
-            "core_problem": "이 프로젝트가 해결하려는 핵심 문제",
-            "core_features": ["핵심 기능 3~6개"],
-            "tech_stack": ["기술 스택 3~8개"],
-            "summary": "프로젝트 요약 1~2문장",
-        },
-        "assets": [
-            {
-                "name": "재사용 가능한 자산명",
-                "type": "Code | UI | Prompt | Data | Architecture | Domain Knowledge | Documentation",
-                "reuse_score": 0.0,
-                "reusable_for": ["재사용 가능한 프로젝트/도메인"],
-                "improvement_needed": ["재사용 전 보완점"],
-            }
-        ],
-        "report": {
-            "limitations": ["한계점"],
-            "develop_points": ["구체적인 개선/고도화 포인트"],
-            "keep": ["유지할 것"],
-            "modify": ["수정할 것"],
-            "drop": ["버리거나 후순위로 둘 것"],
-            "next_builds": ["이 repo에서 이어질 수 있는 다음 프로젝트 후보"],
-            "file_tree_suggestion": ["추천 폴더/파일 구조 라인"],
-        },
-    }
-
-    instruction = {
-        "task": "Analyze this GitHub repository and produce GitMesh single-repo JSON.",
-        "rules": [
-            "Use only repository information in the input. If information is weak, infer cautiously from README, file tree, topics, and languages.",
-            "repo_id and project_id must match input values.",
-            "Create 2-5 high-quality asset cards.",
-            "Create practical develop_points, not generic advice.",
-            "file_tree_suggestion must be a concise recommended structure suitable for the repo.",
-            "Return strict JSON only.",
-        ],
-        "output_schema": schema,
-        "repository": _repo_payload(
-            repo,
-            include_readme=True,
-            include_file_tree=True,
-            file_tree_limit=120,
-        ),
-        "important_files_read_by_github_contents_api": _important_files_payload(
-            important_files or []
-        ),
-    }
-    return json.dumps(instruction, ensure_ascii=False)
+SINGLE_FILE_SYSTEM_PROMPT = """
+You are GitMesh File Project Analyzer.
+Analyze one uploaded file as a project artifact. Produce Project DNA, reusable asset cards, and a practical development report based only on the file content.
+Return ONLY a valid JSON object. Do not include markdown, code fences, comments, or prose outside JSON.
+Use Korean for natural-language values.
+""".strip()
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -257,12 +98,7 @@ def _upstage_client() -> tuple[OpenAI, str]:
 
     model = os.getenv("UPSTAGE_MODEL", "solar-mini").strip() or "solar-mini"
     base_url = os.getenv("UPSTAGE_BASE_URL", "https://api.upstage.ai/v1").strip()
-    client = OpenAI(
-        api_key=api_key,
-        base_url=base_url,
-        timeout=45.0,
-        max_retries=0,
-    )
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=120.0, max_retries=0)
     return client, model
 
 
@@ -275,11 +111,6 @@ def _chat_json_completion(
     temperature: float,
     error_context: str,
 ) -> dict[str, Any]:
-    """Call Upstage/Solar in JSON object mode and parse the result.
-
-    Without response_format, small models may return JSON-looking text with small syntax
-    errors such as missing commas. JSON object mode significantly reduces that failure.
-    """
     try:
         completion = client.chat.completions.create(
             model=model,
@@ -300,52 +131,22 @@ def _chat_json_completion(
     return _extract_json_object(content)
 
 
-def _call_upstage_graph(username: str, repos: list[RepoSummary]) -> dict[str, Any]:
+def _call_json(system_prompt: str, user_prompt: str, *, temperature: float, error_context: str) -> dict[str, Any]:
     client, model = _upstage_client()
     return _chat_json_completion(
         client=client,
         model=model,
-        system_prompt=GRAPH_SYSTEM_PROMPT,
-        user_prompt=_build_graph_prompt(username, repos),
-        temperature=0.1,
-        error_context="Upstage Graph API",
-    )
-
-
-def _call_upstage_file_selection(
-    repo: RepoSummary,
-    candidate_paths: list[str],
-) -> dict[str, Any]:
-    client, model = _upstage_client()
-    return _chat_json_completion(
-        client=client,
-        model=model,
-        system_prompt=FILE_SELECT_SYSTEM_PROMPT,
-        user_prompt=_build_file_selection_prompt(repo, candidate_paths),
-        temperature=0.1,
-        error_context="Upstage 파일 선택 API",
-    )
-
-
-def _call_upstage_single(
-    repo: RepoSummary,
-    important_files: list[SelectedFile] | None = None,
-) -> dict[str, Any]:
-    client, model = _upstage_client()
-    return _chat_json_completion(
-        client=client,
-        model=model,
-        system_prompt=SINGLE_REPO_SYSTEM_PROMPT,
-        user_prompt=_build_single_repo_prompt(repo, important_files or []),
-        temperature=0.2,
-        error_context="Upstage 상세 분석 API",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        error_context=error_context,
     )
 
 
 def _as_str_list(value: Any, *, max_items: int = 8) -> list[str]:
     if not isinstance(value, list):
         return []
-    result = []
+    result: list[str] = []
     for item in value:
         if item is None:
             continue
@@ -369,17 +170,192 @@ def _project_id(repo: RepoSummary) -> str:
     return f"repo_{repo.id}"
 
 
-def analyze_project_graph_with_upstage(
-    username: str,
-    repos: list[RepoSummary],
-) -> ScanResponse:
-    """Create a lightweight repo relationship graph with Upstage/Solar.
+def _file_project_id(file: UploadedFileSummary) -> str:
+    return f"file_{file.id}"
 
-    This runs before deep repository analysis. It should be fast because it only uses
-    GitHub metadata and a small file-tree excerpt. No Project DNA / Asset Cards are
-    generated here.
-    """
-    data = _call_upstage_graph(username, repos)
+
+def _repo_payload(
+    repo: RepoSummary,
+    *,
+    include_readme: bool = True,
+    include_file_tree: bool = True,
+    file_tree_limit: int = 80,
+) -> dict[str, Any]:
+    payload = {
+        "repo_id": repo.id,
+        "project_id": _project_id(repo),
+        "name": repo.name,
+        "full_name": repo.full_name,
+        "html_url": repo.html_url,
+        "description": repo.description,
+        "primary_language": repo.primary_language,
+        "languages": repo.languages[:10],
+        "topics": repo.topics[:15],
+        "stars": repo.stars,
+        "forks": repo.forks,
+        "default_branch": repo.default_branch,
+        "updated_at": repo.updated_at,
+    }
+    if include_file_tree:
+        payload["file_tree_excerpt"] = repo.file_tree[:file_tree_limit]
+    if include_readme:
+        payload["readme_excerpt"] = (repo.readme_text or "")[:2500]
+    return payload
+
+
+def _file_payload(file: UploadedFileSummary) -> dict[str, Any]:
+    return {
+        "file_id": file.id,
+        "repo_id": file.id,
+        "project_id": _file_project_id(file),
+        "name": file.name,
+        "size": file.size,
+        "mime_type": file.mime_type,
+        "content_excerpt": file.content_excerpt[:4500],
+    }
+
+
+def _build_graph_prompt(username: str, repos: list[RepoSummary]) -> str:
+    schema = {
+        "project_summaries": [
+            {"project_id": "repo_<repo_id from input>", "short_summary": "repo의 용도 1문장", "short_domain": ["도메인 키워드 최대 3개"]}
+        ],
+        "edges": [
+            {
+                "source_project_id": "repo_<repo_id from input>",
+                "target_project_id": "repo_<repo_id from input>",
+                "relation": "similar_to | shares_domain_with | shares_tech_with | can_collaborate_with | can_reuse_asset_from | can_improve_with",
+                "weight": 0.0,
+                "reason": "두 repo를 연결한 구체적 이유",
+            }
+        ],
+        "next_builds": [
+            {"id": "next_1", "label": "두 개 이상의 repo를 결합해 만들 수 있는 다음 프로젝트명", "project_ids": ["repo_<repo_id>", "repo_<repo_id>"], "reason": "왜 이 next build가 가능한지"}
+        ],
+    }
+    payload = {
+        "task": "Create a lightweight GitMesh repository relationship graph. Do not perform deep repo analysis.",
+        "rules": [
+            "Use only repository metadata in the input. Do not assume file contents.",
+            "All source_project_id and target_project_id must exactly match input project_id values.",
+            "Prefer meaningful relationships over many weak edges. Create at most 24 edges.",
+            "If repositories are unrelated, create fewer edges rather than forcing relationships.",
+            "Create at most 5 next_builds. A next_build must combine at least 2 repositories.",
+            "Return strict JSON only.",
+        ],
+        "output_schema": schema,
+        "github_username": username,
+        "repositories": [_repo_payload(repo, include_readme=False, include_file_tree=False) for repo in repos],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _build_file_graph_prompt(files: list[UploadedFileSummary]) -> str:
+    schema = {
+        "file_summaries": [
+            {"project_id": "file_<file_id from input>", "short_summary": "파일의 역할 1문장", "short_domain": ["문서/코드/기획 등 키워드 최대 3개"]}
+        ],
+        "edges": [
+            {
+                "source_project_id": "file_<file_id from input>",
+                "target_project_id": "file_<file_id from input>",
+                "relation": "similar_to | same_project | depends_on | complements | can_be_combined_with | improves",
+                "weight": 0.0,
+                "reason": "두 파일을 연결한 구체적 이유",
+            }
+        ],
+        "next_builds": [
+            {"id": "next_1", "label": "여러 파일을 결합해 만들 수 있는 프로젝트/산출물명", "project_ids": ["file_<file_id>", "file_<file_id>"], "reason": "왜 이 next build가 가능한지"}
+        ],
+    }
+    payload = {
+        "task": "Create a lightweight file relationship graph from uploaded project artifacts.",
+        "rules": [
+            "Use uploaded file names, mime types, and text excerpts only.",
+            "All source_project_id and target_project_id must exactly match input project_id values.",
+            "Create at most 20 edges.",
+            "Create at most 5 next_builds.",
+            "Return strict JSON only.",
+        ],
+        "output_schema": schema,
+        "files": [_file_payload(file) for file in files],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _build_file_selection_prompt(repo: RepoSummary, candidate_paths: list[str]) -> str:
+    schema = {"selected_files": [{"path": "path exactly from candidate_paths", "reason": "왜 이 파일이 프로젝트 분석에 중요한지"}]}
+    instruction = {
+        "task": "Select up to 4 important files to read before deep GitMesh repo analysis.",
+        "rules": [
+            "Choose files only from candidate_paths. Paths must match exactly.",
+            "Prefer entrypoints, API routes, agent/workflow logic, service modules, UI entrypoints, configuration and dependency files.",
+            "Do not select generated files, lock files, images, fonts, binary assets, dependency folders, build outputs, or test snapshots.",
+            "Return strict JSON only.",
+        ],
+        "output_schema": schema,
+        "repository": _repo_payload(repo, include_readme=True, include_file_tree=False),
+        "candidate_paths": candidate_paths[:240],
+    }
+    return json.dumps(instruction, ensure_ascii=False)
+
+
+def _important_files_payload(important_files: list[SelectedFile]) -> list[dict[str, str]]:
+    return [
+        {"path": file.path, "selection_reason": file.reason, "content_excerpt": file.content_excerpt[:2500]}
+        for file in important_files[:4]
+    ]
+
+
+def _build_single_repo_prompt(repo: RepoSummary, important_files: list[SelectedFile] | None = None) -> str:
+    schema = {
+        "repo_id": "GitHub repo id from input",
+        "project_id": "repo_<repo_id>",
+        "dna": {"domain": ["최대 3개"], "target_user": "주요 사용자", "core_problem": "이 프로젝트가 해결하려는 핵심 문제", "core_features": ["핵심 기능 3~6개"], "tech_stack": ["기술 스택 3~8개"], "summary": "프로젝트 요약 1~2문장"},
+        "assets": [{"name": "재사용 가능한 자산명", "type": "Code | UI | Prompt | Data | Architecture | Domain Knowledge | Documentation", "reuse_score": 0.0, "reusable_for": ["재사용 가능한 프로젝트/도메인"], "improvement_needed": ["재사용 전 보완점"]}],
+        "report": {"limitations": ["한계점"], "develop_points": ["구체적인 개선/고도화 포인트"], "keep": ["유지할 것"], "modify": ["수정할 것"], "drop": ["버리거나 후순위로 둘 것"], "next_builds": ["이 repo에서 이어질 수 있는 다음 프로젝트 후보"], "file_tree_suggestion": ["추천 폴더/파일 구조 라인"]},
+    }
+    instruction = {
+        "task": "Analyze this GitHub repository and produce GitMesh single-repo JSON.",
+        "rules": [
+            "Use only repository information in the input.",
+            "repo_id and project_id must match input values.",
+            "Create 2-5 high-quality asset cards.",
+            "Create practical develop_points, not generic advice.",
+            "Return strict JSON only.",
+        ],
+        "output_schema": schema,
+        "repository": _repo_payload(repo, include_readme=True, include_file_tree=True, file_tree_limit=80),
+        "important_files_read_by_github_contents_api": _important_files_payload(important_files or []),
+    }
+    return json.dumps(instruction, ensure_ascii=False)
+
+
+def _build_single_file_prompt(file: UploadedFileSummary) -> str:
+    schema = {
+        "repo_id": "uploaded file id from input",
+        "project_id": "file_<file_id>",
+        "dna": {"domain": ["최대 3개"], "target_user": "주요 사용자", "core_problem": "이 파일/문서가 다루는 핵심 문제", "core_features": ["핵심 내용/기능/구성 3~6개"], "tech_stack": ["파일에서 확인되는 기술/도구/방법론"], "summary": "파일 요약 1~2문장"},
+        "assets": [{"name": "재사용 가능한 자산명", "type": "Code | UI | Prompt | Data | Architecture | Domain Knowledge | Documentation | Planning", "reuse_score": 0.0, "reusable_for": ["재사용 가능한 프로젝트/도메인"], "improvement_needed": ["재사용 전 보완점"]}],
+        "report": {"limitations": ["한계점"], "develop_points": ["구체적인 개선/고도화 포인트"], "keep": ["유지할 것"], "modify": ["수정할 것"], "drop": ["버리거나 후순위로 둘 것"], "next_builds": ["이 파일에서 이어질 수 있는 다음 프로젝트 후보"], "file_tree_suggestion": ["추천 산출물/문서 구조 라인"]},
+    }
+    instruction = {
+        "task": "Analyze this uploaded project artifact as a GitMesh file project.",
+        "rules": [
+            "Use only uploaded file content in the input.",
+            "repo_id and project_id must match input values.",
+            "Create 2-5 asset cards.",
+            "Make develop_points concrete and grounded in the file content.",
+            "Return strict JSON only.",
+        ],
+        "output_schema": schema,
+        "file": _file_payload(file),
+    }
+    return json.dumps(instruction, ensure_ascii=False)
+
+
+def analyze_project_graph_with_upstage(username: str, repos: list[RepoSummary]) -> ScanResponse:
+    data = _call_json(GRAPH_SYSTEM_PROMPT, _build_graph_prompt(username, repos), temperature=0.1, error_context="Upstage Graph API")
     valid_ids = {_project_id(repo) for repo in repos}
 
     summary_by_id: dict[str, dict[str, Any]] = {}
@@ -397,15 +373,8 @@ def analyze_project_graph_with_upstage(
                 "language": repo.primary_language,
                 "topics": repo.topics,
                 "updated_at": repo.updated_at,
-                "short_summary": str(
-                    summary_by_id.get(_project_id(repo), {}).get("short_summary")
-                    or repo.description
-                    or ""
-                ),
-                "short_domain": _as_str_list(
-                    summary_by_id.get(_project_id(repo), {}).get("short_domain"),
-                    max_items=3,
-                ),
+                "short_summary": str(summary_by_id.get(_project_id(repo), {}).get("short_summary") or repo.description or ""),
+                "short_domain": _as_str_list(summary_by_id.get(_project_id(repo), {}).get("short_domain"), max_items=3),
             },
         )
         for repo in repos
@@ -414,85 +383,40 @@ def analyze_project_graph_with_upstage(
     related: dict[str, set[str]] = defaultdict(set)
     reasons: dict[str, list[str]] = defaultdict(list)
     edges: list[GraphEdge] = []
-    allowed_relations = {
-        "similar_to",
-        "shares_domain_with",
-        "shares_tech_with",
-        "can_collaborate_with",
-        "can_reuse_asset_from",
-        "can_improve_with",
-    }
+    allowed_relations = {"similar_to", "shares_domain_with", "shares_tech_with", "can_collaborate_with", "can_reuse_asset_from", "can_improve_with"}
 
     for raw_edge in data.get("edges") or []:
         if not isinstance(raw_edge, dict):
             continue
-
         source = str(raw_edge.get("source_project_id") or "").strip()
         target = str(raw_edge.get("target_project_id") or "").strip()
-
         if source not in valid_ids or target not in valid_ids or source == target:
             continue
-
         relation = str(raw_edge.get("relation") or "similar_to").strip()
         if relation not in allowed_relations:
             relation = "similar_to"
-
-        weight = _clamp_score(raw_edge.get("weight", 0.6))
         reason = str(raw_edge.get("reason") or relation).strip()
-
-        edges.append(
-            GraphEdge(
-                source=source,
-                target=target,
-                relation=relation,
-                weight=weight,
-                meta={"reason": reason},
-            )
-        )
+        weight = _clamp_score(raw_edge.get("weight", 0.6))
+        edges.append(GraphEdge(source=source, target=target, relation=relation, weight=weight, meta={"reason": reason}))
         related[source].add(target)
         related[target].add(source)
         reasons[source].append(reason)
         reasons[target].append(reason)
 
-    # Add NextBuild nodes if Upstage found cross-project opportunities.
     for index, raw_next in enumerate(data.get("next_builds") or [], start=1):
         if not isinstance(raw_next, dict):
             continue
-
-        project_ids = [
-            pid
-            for pid in _as_str_list(raw_next.get("project_ids"), max_items=5)
-            if pid in valid_ids
-        ]
+        project_ids = [pid for pid in _as_str_list(raw_next.get("project_ids"), max_items=5) if pid in valid_ids]
         if len(project_ids) < 2:
             continue
-
         next_id = str(raw_next.get("id") or f"next_{index}").strip()
         if not next_id.startswith("next_"):
             next_id = f"next_{index}"
-
         label = str(raw_next.get("label") or f"Next Build {index}").strip()
         reason = str(raw_next.get("reason") or "여러 repo를 결합할 수 있습니다.").strip()
-
-        nodes.append(
-            GraphNode(
-                id=next_id,
-                label=label,
-                type="NextBuild",
-                meta={"reason": reason, "project_ids": project_ids},
-            )
-        )
-
+        nodes.append(GraphNode(id=next_id, label=label, type="NextBuild", meta={"reason": reason, "project_ids": project_ids}))
         for pid in project_ids:
-            edges.append(
-                GraphEdge(
-                    source=pid,
-                    target=next_id,
-                    relation="can_create",
-                    weight=0.85,
-                    meta={"reason": reason},
-                )
-            )
+            edges.append(GraphEdge(source=pid, target=next_id, relation="can_create", weight=0.85, meta={"reason": reason}))
 
     previews = [
         ProjectPreview(
@@ -504,115 +428,143 @@ def analyze_project_graph_with_upstage(
         )
         for repo in repos
     ]
-
-    return ScanResponse(
-        username=username,
-        projects=previews,
-        graph=ProjectGraph(nodes=nodes, edges=edges),
-    )
+    return ScanResponse(username=username, projects=previews, graph=ProjectGraph(nodes=nodes, edges=edges))
 
 
-def select_important_files_with_upstage(
-    repo: RepoSummary,
-    candidate_paths: list[str],
-) -> list[dict[str, str]]:
-    """Ask Upstage/Solar to select source/config files worth reading.
+def analyze_file_graph_with_upstage(scan_id: str, files: list[UploadedFileSummary]) -> FileScanResponse:
+    data = _call_json(FILE_GRAPH_SYSTEM_PROMPT, _build_file_graph_prompt(files), temperature=0.1, error_context="Upstage File Graph API")
+    valid_ids = {_file_project_id(file) for file in files}
 
-    This is not a rule-based fallback. Rules are only used before this step by GitHubClient
-    to remove unsafe or obviously irrelevant binary/generated paths.
-    """
+    summary_by_id: dict[str, dict[str, Any]] = {}
+    for item in data.get("file_summaries") or []:
+        if isinstance(item, dict) and item.get("project_id") in valid_ids:
+            summary_by_id[str(item["project_id"])] = item
+
+    nodes: list[GraphNode] = []
+    previews: list[ProjectPreview] = []
+    related: dict[str, set[str]] = defaultdict(set)
+    reasons: dict[str, list[str]] = defaultdict(list)
+    edges: list[GraphEdge] = []
+
+    for file in files:
+        project_id = _file_project_id(file)
+        summary = summary_by_id.get(project_id, {})
+        synthetic_repo = RepoSummary(
+            id=file.id,
+            name=file.name,
+            full_name=file.name,
+            html_url="#",
+            description=str(summary.get("short_summary") or file.mime_type or "Uploaded file"),
+            primary_language="File",
+            languages=["Uploaded File"],
+            topics=_as_str_list(summary.get("short_domain"), max_items=3),
+            readme_text=file.content_excerpt[:2500],
+            file_tree=[file.name],
+        )
+        nodes.append(GraphNode(id=project_id, label=file.name, type="File", meta={"mime_type": file.mime_type, "size": file.size, "short_summary": synthetic_repo.description or "", "short_domain": synthetic_repo.topics}))
+        previews.append(ProjectPreview(project_id=project_id, repo=synthetic_repo, analysis_status="not_started"))
+
+    allowed_relations = {"similar_to", "same_project", "depends_on", "complements", "can_be_combined_with", "improves"}
+    for raw_edge in data.get("edges") or []:
+        if not isinstance(raw_edge, dict):
+            continue
+        source = str(raw_edge.get("source_project_id") or "").strip()
+        target = str(raw_edge.get("target_project_id") or "").strip()
+        if source not in valid_ids or target not in valid_ids or source == target:
+            continue
+        relation = str(raw_edge.get("relation") or "similar_to").strip()
+        if relation not in allowed_relations:
+            relation = "similar_to"
+        reason = str(raw_edge.get("reason") or relation).strip()
+        weight = _clamp_score(raw_edge.get("weight", 0.6))
+        edges.append(GraphEdge(source=source, target=target, relation=relation, weight=weight, meta={"reason": reason}))
+        related[source].add(target)
+        related[target].add(source)
+        reasons[source].append(reason)
+        reasons[target].append(reason)
+
+    for preview in previews:
+        preview.related_project_ids = sorted(related.get(preview.project_id, set()))[:6]
+        preview.relation_reasons = reasons.get(preview.project_id, [])[:6]
+
+    for index, raw_next in enumerate(data.get("next_builds") or [], start=1):
+        if not isinstance(raw_next, dict):
+            continue
+        project_ids = [pid for pid in _as_str_list(raw_next.get("project_ids"), max_items=5) if pid in valid_ids]
+        if len(project_ids) < 2:
+            continue
+        next_id = str(raw_next.get("id") or f"next_{index}").strip()
+        if not next_id.startswith("next_"):
+            next_id = f"next_{index}"
+        label = str(raw_next.get("label") or f"Next Build {index}").strip()
+        reason = str(raw_next.get("reason") or "여러 파일을 결합할 수 있습니다.").strip()
+        nodes.append(GraphNode(id=next_id, label=label, type="NextBuild", meta={"reason": reason, "project_ids": project_ids}))
+        for pid in project_ids:
+            edges.append(GraphEdge(source=pid, target=next_id, relation="can_create", weight=0.85, meta={"reason": reason}))
+
+    return FileScanResponse(scan_id=scan_id, username="uploaded-files", projects=previews, graph=ProjectGraph(nodes=nodes, edges=edges))
+
+
+def select_important_files_with_upstage(repo: RepoSummary, candidate_paths: list[str]) -> list[dict[str, str]]:
     if not candidate_paths:
         raise LLMAnalysisError("분석할 수 있는 텍스트 파일 경로가 없습니다.")
-
-    data = _call_upstage_file_selection(repo, candidate_paths)
+    data = _call_json(FILE_SELECT_SYSTEM_PROMPT, _build_file_selection_prompt(repo, candidate_paths), temperature=0.1, error_context="Upstage 파일 선택 API")
     selected_raw = data.get("selected_files")
-
     if not isinstance(selected_raw, list):
         raise LLMAnalysisError("Upstage 파일 선택 응답에 selected_files 배열이 없습니다.")
 
     allowed = set(candidate_paths)
     selected: list[dict[str, str]] = []
     seen: set[str] = set()
-
     for item in selected_raw:
         if not isinstance(item, dict):
             continue
-
         path = str(item.get("path") or "").strip()
         reason = str(item.get("reason") or "").strip()
-
         if not path or path not in allowed or path in seen:
             continue
-
         seen.add(path)
-        selected.append(
-            {
-                "path": path,
-                "reason": reason or "LLM이 핵심 분석 파일로 선택했습니다.",
-            }
-        )
-
-        if len(selected) >= 8:
+        selected.append({"path": path, "reason": reason or "LLM이 핵심 분석 파일로 선택했습니다."})
+        if len(selected) >= 4:
             break
-
     if not selected:
         raise LLMAnalysisError("Upstage가 유효한 핵심 파일을 선택하지 못했습니다.")
-
     return selected
 
 
-def _project_from_llm(
-    project: dict[str, Any],
-    repo: RepoSummary,
-    selected_files: list[SelectedFile] | None = None,
-) -> ProjectReport:
+def _project_from_llm(project: dict[str, Any], repo: RepoSummary, selected_files: list[SelectedFile] | None = None, *, is_uploaded_file: bool = False) -> ProjectReport:
     repo_id = str(project.get("repo_id") or "").strip()
-
     if repo_id != repo.id:
-        raise LLMAnalysisError(
-            f"Upstage 응답 repo_id가 입력 repo와 다릅니다: {repo_id} != {repo.id}"
-        )
+        raise LLMAnalysisError(f"Upstage 응답 repo_id가 입력 id와 다릅니다: {repo_id} != {repo.id}")
 
     dna_raw = project.get("dna") or {}
     report_raw = project.get("report") or {}
-
     dna = ProjectDNA(
         domain=_as_str_list(dna_raw.get("domain"), max_items=3) or ["미분류"],
         target_user=str(dna_raw.get("target_user") or "대상 사용자 추가 분석 필요"),
         core_problem=str(dna_raw.get("core_problem") or "핵심 문제 정의 추가 분석 필요"),
-        core_features=_as_str_list(dna_raw.get("core_features"), max_items=6)
-        or ["핵심 기능 추가 분석 필요"],
-        tech_stack=_as_str_list(dna_raw.get("tech_stack"), max_items=8)
-        or repo.languages
-        or [repo.primary_language or "Unknown"],
+        core_features=_as_str_list(dna_raw.get("core_features"), max_items=6) or ["핵심 기능 추가 분석 필요"],
+        tech_stack=_as_str_list(dna_raw.get("tech_stack"), max_items=8) or repo.languages or [repo.primary_language or "Unknown"],
         summary=str(dna_raw.get("summary") or repo.description or repo.name),
     )
 
     assets: list[AssetCard] = []
-
     for asset_raw in project.get("assets") or []:
         if not isinstance(asset_raw, dict):
             continue
-
         name = str(asset_raw.get("name") or "").strip()
         if not name:
             continue
-
-        assets.append(
-            AssetCard(
-                name=name,
-                type=str(asset_raw.get("type") or "Asset"),
-                reuse_score=_clamp_score(asset_raw.get("reuse_score", 0.5)),
-                reusable_for=_as_str_list(asset_raw.get("reusable_for"), max_items=6),
-                improvement_needed=_as_str_list(
-                    asset_raw.get("improvement_needed"),
-                    max_items=6,
-                ),
-            )
-        )
+        assets.append(AssetCard(
+            name=name,
+            type=str(asset_raw.get("type") or "Asset"),
+            reuse_score=_clamp_score(asset_raw.get("reuse_score", 0.5)),
+            reusable_for=_as_str_list(asset_raw.get("reusable_for"), max_items=6),
+            improvement_needed=_as_str_list(asset_raw.get("improvement_needed"), max_items=6),
+        ))
 
     if not assets:
-        raise LLMAnalysisError(f"{repo.name} repository의 asset 분석 결과가 비어 있습니다.")
+        raise LLMAnalysisError(f"{repo.name} 분석 결과의 asset이 비어 있습니다.")
 
     report = DevelopReport(
         limitations=_as_str_list(report_raw.get("limitations"), max_items=7),
@@ -621,14 +573,11 @@ def _project_from_llm(
         modify=_as_str_list(report_raw.get("modify"), max_items=6),
         drop=_as_str_list(report_raw.get("drop"), max_items=6),
         next_builds=_as_str_list(report_raw.get("next_builds"), max_items=6),
-        file_tree_suggestion=_as_str_list(
-            report_raw.get("file_tree_suggestion"),
-            max_items=14,
-        ),
+        file_tree_suggestion=_as_str_list(report_raw.get("file_tree_suggestion"), max_items=14),
     )
 
     return ProjectReport(
-        project_id=f"repo_{repo.id}",
+        project_id=f"file_{repo.id}" if is_uploaded_file else f"repo_{repo.id}",
         repo=repo,
         dna=dna,
         assets=assets,
@@ -637,14 +586,28 @@ def _project_from_llm(
     )
 
 
-def analyze_repository_with_upstage(
-    repo: RepoSummary,
-    important_files: list[SelectedFile] | None = None,
-) -> ProjectReport:
-    """Analyze a single repository with Upstage/Solar. No rule-based fallback is used."""
-    data = _call_upstage_single(repo, important_files or [])
+def analyze_repository_with_upstage(repo: RepoSummary, important_files: list[SelectedFile] | None = None) -> ProjectReport:
+    data = _call_json(SINGLE_REPO_SYSTEM_PROMPT, _build_single_repo_prompt(repo, important_files or []), temperature=0.2, error_context="Upstage 상세 분석 API")
+    return _project_from_llm(data, repo, selected_files=important_files or [], is_uploaded_file=False)
+
+
+def analyze_uploaded_file_with_upstage(file: UploadedFileSummary) -> ProjectReport:
+    data = _call_json(SINGLE_FILE_SYSTEM_PROMPT, _build_single_file_prompt(file), temperature=0.2, error_context="Upstage 파일 상세 분석 API")
+    repo = RepoSummary(
+        id=file.id,
+        name=file.name,
+        full_name=file.name,
+        html_url="#",
+        description=file.mime_type or "Uploaded file",
+        primary_language="File",
+        languages=["Uploaded File"],
+        topics=[],
+        readme_text=file.content_excerpt[:2500],
+        file_tree=[file.name],
+    )
     return _project_from_llm(
         data,
         repo,
-        selected_files=important_files or [],
+        selected_files=[SelectedFile(path=file.name, reason="사용자가 업로드한 원본 파일입니다.", content_excerpt=file.content_excerpt[:2500])],
+        is_uploaded_file=True,
     )
