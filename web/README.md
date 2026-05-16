@@ -1,66 +1,84 @@
-# GitMesh
+# GitMesh Web
 
-**GitMesh**는 GitHub repository 또는 업로드한 프로젝트 파일들을 그래프로 연결하고, 선택한 노드에 대해 AI 분석 리포트를 생성하는 웹 기반 프로젝트 분석 도구입니다.
+GitMesh Web은 GitMesh의 프론트엔드입니다.
 
-GitMesh는 **프로젝트의 끝**을 **또다른 시작**으로 바꿔줍니다.
+사용자는 웹 화면에서 GitHub username을 입력하거나 프로젝트 파일을 업로드해 프로젝트 그래프를 생성할 수 있습니다. 그래프의 노드를 클릭하면 preview modal이 열리고, 선택한 노드에 대해 AI 분석을 실행할 수 있습니다.
+
+AI 분석 결과는 별도 report page에서 확인합니다.
 
 ---
 
 ## 주요 기능
 
-### 1. GitHub Project Graph
+### 1. GitHub Graph 생성
 
-사용자가 GitHub username을 입력하면 최근 업데이트 기준 최대 10개의 public repository를 가져옵니다.
+GitHub username을 입력하면 backend의 `/github/scan-user` API를 호출합니다.
 
-수집한 repository metadata를 바탕으로 Upstage/Solar 모델이 repository 간 관계를 판단하고, Cytoscape.js 기반 그래프로 시각화합니다.
-
-사용 데이터:
-
-- repository name
-- description
-- primary language
-- topics
-- stars / forks
-- updated_at
-
-그래프 생성 단계에서는 속도와 비용을 줄이기 위해 전체 파일 내용을 읽지 않습니다.
+```text
+GitHub username 입력
+→ backend API 호출
+→ GitHub public repository 최대 10개 수집
+→ Upstage/Solar 기반 repo 관계 graph 생성
+→ Cytoscape.js로 graph 시각화
+```
 
 ---
 
 ### 2. Add Project from File
 
-GitHub가 아니더라도 프로젝트 관련 파일을 업로드해 그래프를 만들 수 있습니다.
+파일 업로드 기능을 제공합니다.
 
-지원하는 예시:
+사용자는 프로젝트 관련 파일을 여러 개 업로드할 수 있고, 업로드한 파일은 각각 graph node로 표시됩니다.
+
+지원 예시:
 
 - README.md
-- 기획서 txt/md
+- txt / md 문서
 - 코드 파일
 - JSON / YAML
-- 간단한 문서 파일
+- 간단한 기획 문서
 
-업로드한 파일들은 각각 하나의 노드가 되며, Upstage/Solar가 파일 간 관계를 판단합니다.
-
-파일 목록에서는 개별 파일 삭제가 가능합니다.
+업로드 후 파일 목록에서 개별 파일을 삭제할 수 있습니다.
 
 ---
 
-### 3. Node Preview
+### 3. Graph Visualization
 
-그래프에서 노드를 클릭하면 preview modal이 열립니다.
+그래프는 Cytoscape.js로 시각화합니다.
 
-GitHub repository 노드에서는 다음 정보를 확인할 수 있습니다.
+지원 기능:
+
+- node drag
+- zoom
+- pan
+- fit graph
+- node click
+- selected node highlight
+- related edge highlight
+
+현재 layout은 `concentric` 기반입니다.
+
+연결이 많은 노드가 중심에 배치되고, 연결이 적은 노드는 바깥쪽으로 배치됩니다.
+
+---
+
+### 4. Node Preview Modal
+
+그래프 노드를 클릭하면 preview modal이 열립니다.
+
+GitHub repository 노드에서는 다음 정보를 보여줍니다.
 
 - repository name
 - description
 - language
 - topics
-- stars / forks
+- stars
+- forks
 - related nodes
 - GitHub link
 - AI 분석 시작 버튼
 
-파일 노드에서는 다음 정보를 확인할 수 있습니다.
+파일 노드에서는 다음 정보를 보여줍니다.
 
 - file name
 - file type
@@ -69,70 +87,41 @@ GitHub repository 노드에서는 다음 정보를 확인할 수 있습니다.
 
 ---
 
-### 4. AI Analysis Report
+### 5. AI Analysis Report
 
-AI 분석은 사용자가 선택한 노드에 대해서만 실행됩니다.
+AI 분석은 선택한 노드에 대해서만 실행됩니다.
 
-GitHub repository의 경우:
+분석 결과는 별도 report page에서 보여줍니다.
 
-1. README와 file tree를 가져옵니다.
-2. Upstage/Solar가 분석에 필요한 핵심 파일 path를 선택합니다.
-3. GitHub Contents API로 선택된 파일 일부를 읽습니다.
-4. 선택된 파일 내용과 README를 바탕으로 분석 리포트를 생성합니다.
+리포트는 세 개의 섹션으로 구성됩니다.
 
-파일 업로드의 경우:
-
-1. 업로드한 파일 내용을 기반으로 분석합니다.
-2. 해당 파일을 프로젝트 산출물로 보고 분석 리포트를 생성합니다.
-
-AI 분석 리포트는 다음 세 가지 섹션으로 구성됩니다.
-
-1. **Asset Card**
-2. **Develop Point**
-3. **Roadmap**
+1. Asset Card
+2. Develop Point
+3. Roadmap
 
 ---
 
-## 기술 스택
+### 6. Theme
 
-### Frontend
+Light mode와 Dark mode를 지원합니다.
 
-- HTML
-- CSS
-- JavaScript
-- Cytoscape.js
-
-### Backend
-
-- Python
-- FastAPI
-- httpx
-- OpenAI-compatible client
-- Upstage/Solar API
-- GitHub REST API
-
----
-
-## 프로젝트 구조
+테마 선택값은 `localStorage`에 저장됩니다.
 
 ```text
-gitmesh_app/
+GITMESH_THEME=light
+GITMESH_THEME=dark
+```
+
+처음 접속 시에는 브라우저 시스템 테마를 따릅니다.
+
+---
+
+## 파일 구조
+
+```text
+web/
   README.md
-  .gitignore
-
-  backend/
-    README.md
-    requirements.txt
-    .env.example
-    app/
-      __init__.py
-      main.py
-      github_client.py
-      llm_analyzer.py
-      models.py
-
-  web/
-    README.md
-    index.html
-    app.js
-    styles.css
+  index.html
+  app.js
+  styles.css
+```
