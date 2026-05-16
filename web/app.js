@@ -117,7 +117,7 @@ function renderHome() {
     <section class="home-page">
       <div class="home-hero">
         <div class="eyebrow">GitHub · Files · AI Project Graph</div>
-        <h1>프로젝트를 연결하고,<br />다음 빌드를 찾다.</h1>
+        <h1>프로젝트를 연결하여,<br />다음 빌드를 찾다.</h1>
         <p class="subtitle home-subtitle">
           GitHub repository나 프로젝트 파일을 그래프로 연결하고, 필요한 노드만 선택해 AI 분석 리포트를 생성합니다.
         </p>
@@ -247,8 +247,8 @@ function renderLoading() {
     ? "업로드한 파일들의 관계 그래프를 만들고 있어요"
     : "GitHub 프로젝트 그래프를 만들고 있어요";
   const sub = state.sourceMode === "files"
-    ? "파일 내용 일부를 기반으로 Upstage/Solar가 파일 간 관계를 판단하는 중입니다."
-    : "최근 업데이트 기준 최대 10개 repository의 metadata를 수집하고 Upstage/Solar가 repo 간 관계를 판단하는 중입니다.";
+    ? "파일 내용 일부를 기반으로 Solar가 파일 간 관계를 판단하는 중입니다."
+    : "최대 10개 repository의 metadata를 수집하고 Solar가 repo 간 관계를 판단하는 중입니다.";
   app.innerHTML = shell(`
     <section class="loading-page">
       <div class="card loading-card">
