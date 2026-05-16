@@ -27,7 +27,24 @@ a { color: inherit; }
 .shell { min-height: 100vh; padding: clamp(14px, 3vw, 28px); }
 .nav { max-width: 1440px; margin: 0 auto 26px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .brand { display: flex; align-items: center; gap: 12px; font-weight: 900; font-size: 22px; }
-.logo { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; background: var(--blue); color: white; font-weight: 900; box-shadow: 0 12px 28px rgba(49, 130, 246, 0.28); }
+.logo {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #111827;
+  color: white;
+  font-weight: 900;
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.22);
+}
+
+.github-logo svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+  fill: currentColor;
+}
 .nav-pill { padding: 10px 16px; border-radius: 999px; background: white; color: var(--muted); font-size: 14px; border: 1px solid var(--line); }
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid rgba(229, 231, 235, 0.8); }
 
@@ -244,5 +261,238 @@ h1 { margin: 22px 0 16px; font-size: clamp(38px, 5vw, 56px); line-height: 1.08; 
   .cy-graph {
     height: 62vh;
     min-height: 380px;
+  }
+}
+
+/* Minimal home redesign */
+.home-page {
+  min-height: calc(100vh - 116px);
+  display: grid;
+  place-items: center;
+}
+
+.home-hero {
+  width: min(880px, 100%);
+  margin: 0 auto;
+  text-align: center;
+}
+
+.home-hero h1 {
+  margin-top: 18px;
+  margin-bottom: 16px;
+}
+
+.home-subtitle {
+  margin: 0 auto;
+  max-width: 720px;
+}
+
+.home-action-card {
+  margin: 32px auto 0;
+  padding: clamp(22px, 4vw, 34px);
+  max-width: 760px;
+  text-align: left;
+}
+
+.compact-tabs {
+  justify-content: center;
+  margin-top: 0;
+  margin-bottom: 18px;
+}
+
+.clean-input-row {
+  margin-top: 0;
+}
+
+.compact-file-drop {
+  padding: 18px;
+}
+
+.home-footnote {
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+/* Report redesign: develop-point first */
+.clean-report-hero {
+  box-shadow: none;
+  border: 1px solid var(--line);
+}
+
+.develop-focus {
+  padding: clamp(24px, 4vw, 36px);
+  margin-bottom: 24px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.focus-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.focus-kicker {
+  color: var(--blue);
+  font-weight: 950;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.focus-head h2 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 38px);
+  letter-spacing: -0.7px;
+}
+
+.focus-count {
+  flex: 0 0 auto;
+  background: var(--blue-soft);
+  color: var(--blue-dark);
+  padding: 9px 13px;
+  border-radius: 999px;
+  font-weight: 950;
+  font-size: 13px;
+}
+
+.develop-list {
+  display: grid;
+  gap: 12px;
+}
+
+.develop-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid #dbeafe;
+  background: #ffffff;
+}
+
+.develop-index {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--blue);
+  color: #ffffff;
+  font-weight: 950;
+}
+
+.develop-text {
+  line-height: 1.75;
+  color: #1f2937;
+  font-weight: 700;
+}
+
+/* Hide legacy flow card if old markup remains cached */
+.preview-card .flow-box {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .home-page {
+    min-height: auto;
+    place-items: start;
+  }
+
+  .home-hero {
+    text-align: left;
+  }
+
+  .compact-tabs {
+    justify-content: flex-start;
+  }
+
+  .focus-head {
+    flex-direction: column;
+  }
+
+  .develop-item {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Asset / Develop Point / Roadmap focused report */
+.simple-report-page .report-section-primary {
+  margin-bottom: 24px;
+}
+
+.section-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.section-headline h2 {
+  margin: 6px 0 0;
+  font-size: 28px;
+  letter-spacing: -0.5px;
+}
+
+.asset-card-focused {
+  min-height: 250px;
+}
+
+.roadmap-focus {
+  padding: 30px;
+  margin-bottom: 24px;
+}
+
+.roadmap-list {
+  display: grid;
+  gap: 12px;
+}
+
+.roadmap-item {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  border-radius: 20px;
+}
+
+.roadmap-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.roadmap-text {
+  color: #1f2937;
+  line-height: 1.75;
+  font-size: 15px;
+}
+
+@media (max-width: 640px) {
+  .section-headline,
+  .roadmap-item {
+    grid-template-columns: 1fr;
+  }
+
+  .section-headline {
+    align-items: flex-start;
+  }
+
+  .roadmap-step {
+    width: fit-content;
   }
 }

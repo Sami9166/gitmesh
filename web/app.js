@@ -38,7 +38,11 @@ function shell(content) {
     <main class="shell">
       <nav class="nav">
         <div class="brand">
-          <div class="logo">GM</div>
+          <div class="logo github-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="img" focusable="false">
+              <path d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.36 6.84 9.72.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.38-3.37-1.38-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.35 9.35 0 0 1 12 6.95c.85 0 1.7.12 2.5.35 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.8-4.57 5.05.36.32.68.95.68 1.91 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.14 10.14 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z" />
+            </svg>
+          </div>
           <span>GitMesh</span>
         </div>
         <div class="nav-pill">GitHub & File Project Graph</div>
@@ -50,63 +54,44 @@ function shell(content) {
 
 function renderHome() {
   app.innerHTML = shell(`
-    <section class="hero">
-      <div class="card hero-card">
-        <div class="eyebrow">GitHub 또는 파일로 시작</div>
-        <h1>흩어진 repo와 파일을<br />다음 빌드의 자산으로.</h1>
-        <p class="subtitle">
-          GitMesh는 GitHub public repository 최대 10개 또는 업로드한 파일들을 그래프로 연결하고,
-          관심 있는 노드만 선택해 AI 분석 리포트를 생성합니다.
+    <section class="home-page">
+      <div class="home-hero">
+        <div class="eyebrow">GitHub · Files · AI Project Graph</div>
+        <h1>프로젝트를 연결하고,<br />다음 빌드를 찾다.</h1>
+        <p class="subtitle home-subtitle">
+          GitHub repository나 프로젝트 파일을 그래프로 연결하고, 필요한 노드만 선택해 AI 분석 리포트를 생성합니다.
         </p>
 
-        <div class="mode-tabs">
-          <button id="mode-github" class="mode-tab active">GitHub Graph</button>
-          <button id="mode-files" class="mode-tab">Add Project from File</button>
+        <div class="card home-action-card">
+          <div class="mode-tabs compact-tabs">
+            <button id="mode-github" class="mode-tab active">GitHub</button>
+            <button id="mode-files" class="mode-tab">File Upload</button>
+          </div>
+
+          <form id="github-form" class="input-row clean-input-row">
+            <input
+              id="username"
+              class="github-input"
+              name="username"
+              placeholder="GitHub username 입력"
+              autocomplete="off"
+            />
+            <button class="primary-btn" type="submit">그래프 생성</button>
+          </form>
+
+          <form id="file-form" class="file-form hidden">
+            <label class="file-drop compact-file-drop">
+              <input id="project-files" type="file" multiple />
+              <div class="file-drop-title">프로젝트 파일 추가</div>
+              <div class="file-drop-desc">README, 기획서, 코드, JSON/YAML, TXT/MD 파일을 업로드할 수 있습니다.</div>
+            </label>
+            <div id="file-list" class="file-list"></div>
+            <button class="primary-btn" type="submit">파일 그래프 생성</button>
+          </form>
         </div>
 
-        <form id="github-form" class="input-row">
-          <input
-            id="username"
-            class="github-input"
-            name="username"
-            placeholder="GitHub username 입력 예: octocat"
-            autocomplete="off"
-          />
-          <button class="primary-btn" type="submit">그래프 생성</button>
-        </form>
-
-        <form id="file-form" class="file-form hidden">
-          <label class="file-drop">
-            <input id="project-files" type="file" multiple />
-            <div class="file-drop-title">프로젝트 파일 업로드</div>
-            <div class="file-drop-desc">
-              README, 기획서 txt/md, 코드 파일, json/yaml 등을 여러 개 올리면 파일 간 graph를 생성합니다.
-            </div>
-          </label>
-          <button class="primary-btn" type="submit">파일 그래프 생성</button>
-          <div id="file-list" class="file-list"></div>
-        </form>
-
-        <div class="sample-row">
-          <button class="sample-chip" data-sample="octocat">octocat</button>
-          <button class="sample-chip" data-sample="torvalds">torvalds</button>
-          <button class="sample-chip" data-sample="gaearon">gaearon</button>
-        </div>
-      </div>
-
-      <div class="card preview-card">
-        <div class="preview-title">GitMesh Flow</div>
-        <div class="mini-grid">
-          <div class="mini-card"><div class="mini-label">Step 1</div><div class="mini-value">Graph First</div></div>
-          <div class="mini-card"><div class="mini-label">Step 2</div><div class="mini-value">Node Preview</div></div>
-          <div class="mini-card"><div class="mini-label">Step 3</div><div class="mini-value">AI Analysis</div></div>
-          <div class="mini-card"><div class="mini-label">Step 4</div><div class="mini-value">Report Page</div></div>
-        </div>
-        <div class="flow-box">
-          GitHub ID 또는 파일 업로드<br />
-          → Upstage가 관계 graph 생성<br />
-          → 노드 클릭 시 preview modal<br />
-          → AI 분석 후 별도 report page에서 확인
+        <div class="home-footnote">
+          Graph first. Analyze only what matters.
         </div>
       </div>
     </section>
@@ -195,15 +180,7 @@ function renderHome() {
   });
 
   renderSelectedFiles();
-
-  document.querySelectorAll("[data-sample]").forEach((button) => {
-    button.addEventListener("click", () => {
-      setMode("github");
-      document.getElementById("username").value = button.dataset.sample;
-    });
-  });
 }
-
 function renderLoading() {
   const text = state.sourceMode === "files"
     ? "업로드한 파일들의 관계 그래프를 만들고 있어요"
@@ -473,11 +450,13 @@ function mountCytoscapeGraph() {
           "text-halign": "center",
           color: "#ffffff",
           "font-size": 12,
-          "font-weight": 800,
+          "font-weight": 900,
+          "text-wrap": "wrap",
+          "text-max-width": 74,
           "text-outline-width": 2,
           "text-outline-color": "data(color)",
-          width: 78,
-          height: 78,
+          width: 84,
+          height: 84,
           "border-width": 4,
           "border-color": "#ffffff",
         },
@@ -500,10 +479,6 @@ function mountCytoscapeGraph() {
           label: "",
           "font-size": 10,
           color: "#64748b",
-          "text-background-color": "#ffffff",
-          "text-background-opacity": 0.82,
-          "text-background-padding": 3,
-          "text-rotation": "autorotate",
         },
       },
       {
@@ -525,10 +500,10 @@ function mountCytoscapeGraph() {
     layout: {
       name: "concentric",
       fit: true,
-      padding: 70,
+      padding: 72,
       animate: true,
       animationDuration: 600,
-      minNodeSpacing: 70,
+      minNodeSpacing: 78,
       concentric: function (node) {
         return node.degree();
       },
@@ -555,12 +530,12 @@ function mountCytoscapeGraph() {
 
   cy.on("mouseover", "node", (event) => {
     container.style.cursor = "pointer";
-    event.target.animate({ style: { width: 88, height: 88 } }, { duration: 120 });
+    event.target.animate({ style: { width: 94, height: 94 } }, { duration: 120 });
   });
 
   cy.on("mouseout", "node", (event) => {
     container.style.cursor = "default";
-    event.target.animate({ style: { width: 78, height: 78 } }, { duration: 120 });
+    event.target.animate({ style: { width: 84, height: 84 } }, { duration: 120 });
   });
 
   const fitButton = document.getElementById("fit-graph");
@@ -728,43 +703,147 @@ function renderReportPage() {
   const projectId = state.selectedProjectId;
   const preview = projectById(projectId);
   const analyzed = state.analysisByProjectId[projectId];
-  if (!preview) { state.view = "result"; render(); return; }
+
+  if (!preview) {
+    state.view = "result";
+    render();
+    return;
+  }
 
   if (!analyzed) {
     app.innerHTML = shell(`
       <section class="report-page">
-        <div class="report-topbar"><button id="back-to-graph" class="secondary-btn">← 그래프로 돌아가기</button></div>
-        <div class="card report-empty"><h2>아직 분석 결과가 없습니다</h2><p class="muted">${escapeHtml(preview.repo?.name || "선택한 노드")}의 AI 분석을 먼저 실행해주세요.</p><button id="start-analysis" class="primary-btn">AI 분석 시작</button></div>
+        <div class="report-topbar">
+          <button id="back-to-graph" class="secondary-btn">← 그래프로 돌아가기</button>
+        </div>
+        <div class="card report-empty">
+          <h2>아직 분석 결과가 없습니다</h2>
+          <p class="muted">${escapeHtml(preview.repo?.name || "선택한 노드")}의 AI 분석을 먼저 실행해주세요.</p>
+          <button id="start-analysis" class="primary-btn">AI 분석 시작</button>
+        </div>
       </section>
     `);
-    document.getElementById("back-to-graph").addEventListener("click", () => { state.view = "result"; render(); });
-    document.getElementById("start-analysis").addEventListener("click", () => analyzeSelectedNode(preview, { goToReport: true }));
+
+    document.getElementById("back-to-graph").addEventListener("click", () => {
+      state.view = "result";
+      render();
+    });
+    document.getElementById("start-analysis").addEventListener("click", () => {
+      analyzeSelectedNode(preview, { goToReport: true });
+    });
     return;
   }
 
   const repo = analyzed.repo || preview.repo || {};
   const dna = analyzed.dna || {};
   const report = analyzed.report || {};
-  const selectedFiles = analyzed.selected_files || [];
+  const assets = analyzed.assets || [];
+  const roadmap = report.next_builds || [];
 
   app.innerHTML = shell(`
-    <section class="report-page">
+    <section class="report-page simple-report-page">
       <div class="report-topbar">
         <button id="back-to-graph" class="secondary-btn">← 그래프로 돌아가기</button>
-        ${state.sourceMode !== "files" ? `<a class="secondary-btn link-btn" href="${escapeHtml(repo.html_url || "#")}" target="_blank" rel="noreferrer">GitHub 열기</a>` : ""}
+        ${
+          state.sourceMode !== "files"
+            ? `<a class="secondary-btn link-btn" href="${escapeHtml(repo.html_url || "#")}" target="_blank" rel="noreferrer">GitHub 열기</a>`
+            : ""
+        }
       </div>
-      <header class="report-hero card"><div class="report-kicker">AI Project Report</div><h1>${escapeHtml(repo.name || preview.project_id)}</h1><p>${escapeHtml(dna.summary || repo.description || "Analysis report.")}</p><div class="report-tags">${tagList(dna.domain)}${tagList(dna.tech_stack?.length ? dna.tech_stack : repo.languages)}</div></header>
-      <section class="report-grid">
-        <div class="card report-card-large"><h2>Project DNA</h2><div class="info-list"><div class="info-row"><div class="info-key">Target User</div><div class="info-value">${escapeHtml(dna.target_user || "Unknown")}</div></div><div class="info-row"><div class="info-key">Core Problem</div><div class="info-value">${escapeHtml(dna.core_problem || "Unknown")}</div></div><div class="info-row"><div class="info-key">Core Features</div><div class="info-value tags">${tagList(dna.core_features)}</div></div><div class="info-row"><div class="info-key">Tech Stack</div><div class="info-value tags">${tagList(dna.tech_stack?.length ? dna.tech_stack : repo.languages)}</div></div></div></div>
-        <div class="card report-card-large"><h2>Develop Report</h2><div class="report-subcard"><b>Limitations</b>${listItems(report.limitations)}</div><div class="report-subcard"><b>Develop Points</b>${listItems(report.develop_points)}</div><div class="report-subcard"><b>Keep</b>${listItems(report.keep)}</div><div class="report-subcard"><b>Modify</b>${listItems(report.modify)}</div><div class="report-subcard"><b>Drop</b>${listItems(report.drop)}</div></div>
+
+      <header class="report-hero card clean-report-hero">
+        <div class="report-kicker">AI Project Report</div>
+        <h1>${escapeHtml(repo.name || preview.project_id)}</h1>
+        <p>${escapeHtml(dna.summary || repo.description || "Analysis report.")}</p>
+        <div class="report-tags">
+          <span class="tag">Asset Card</span>
+          <span class="tag">Develop Point</span>
+          <span class="tag">Roadmap</span>
+        </div>
+      </header>
+
+      <section class="report-section report-section-primary">
+        <div class="section-headline">
+          <div>
+            <div class="focus-kicker">01</div>
+            <h2>Asset Card</h2>
+          </div>
+          <span class="focus-count">${assets.length} cards</span>
+        </div>
+        <div class="asset-grid">
+          ${assets.length
+            ? assets
+                .map(
+                  (asset) => `
+                    <div class="card asset-card asset-card-focused">
+                      <div class="asset-top">
+                        <div>
+                          <div class="asset-name">${escapeHtml(asset.name)}</div>
+                          <div class="asset-type">${escapeHtml(asset.type)}</div>
+                        </div>
+                        <div class="score">reuse ${Math.round((asset.reuse_score || 0) * 100)}%</div>
+                      </div>
+                      <div class="asset-block"><b>활용 가능</b>${listItems(asset.reusable_for)}</div>
+                      <div class="asset-block"><b>보완 필요</b>${listItems(asset.improvement_needed)}</div>
+                    </div>
+                  `
+                )
+                .join("")
+            : `<div class="empty-state">Asset Card가 없습니다.</div>`}
+        </div>
       </section>
-      <section class="report-section"><h2>Reusable Asset Cards</h2><div class="asset-grid">${(analyzed.assets || []).map((asset) => `<div class="card asset-card"><div class="asset-top"><div><div class="asset-name">${escapeHtml(asset.name)}</div><div class="asset-type">${escapeHtml(asset.type)}</div></div><div class="score">reuse ${Math.round((asset.reuse_score || 0) * 100)}%</div></div><div class="asset-block"><b>활용 가능</b>${listItems(asset.reusable_for)}</div><div class="asset-block"><b>보완 필요</b>${listItems(asset.improvement_needed)}</div></div>`).join("") || `<div class="empty-state">Asset Card가 없습니다.</div>`}</div></section>
-      <section class="report-grid"><div class="card report-card-large"><h2>${state.sourceMode === "files" ? "Source File" : "Selected Core Files"}</h2>${selectedFiles.length ? selectedFiles.map((file) => `<div class="file-card"><div class="file-path">${escapeHtml(file.path)}</div><div class="file-reason">${escapeHtml(file.reason || "Selected for analysis.")}</div></div>`).join("") : `<div class="empty-state">선택된 핵심 파일 정보가 없습니다.</div>`}</div><div class="card report-card-large"><h2>Structure Suggestion</h2>${listItems(report.file_tree_suggestion)}<h2 style="margin-top: 28px;">Next Build</h2>${listItems(report.next_builds)}</div></section>
+
+      <section class="develop-focus card">
+        <div class="focus-head">
+          <div>
+            <div class="focus-kicker">02</div>
+            <h2>Develop Point</h2>
+          </div>
+          <span class="focus-count">${(report.develop_points || []).length} items</span>
+        </div>
+        <div class="develop-list">
+          ${(report.develop_points || []).length
+            ? report.develop_points
+                .map((item, index) => `
+                  <div class="develop-item">
+                    <div class="develop-index">${index + 1}</div>
+                    <div class="develop-text">${escapeHtml(item)}</div>
+                  </div>
+                `)
+                .join("")
+            : `<div class="empty-state">구체적인 개선 포인트가 없습니다.</div>`}
+        </div>
+      </section>
+
+      <section class="roadmap-focus card">
+        <div class="focus-head">
+          <div>
+            <div class="focus-kicker">03</div>
+            <h2>Roadmap</h2>
+          </div>
+          <span class="focus-count">${roadmap.length} steps</span>
+        </div>
+        <div class="roadmap-list">
+          ${roadmap.length
+            ? roadmap
+                .map((item, index) => `
+                  <div class="roadmap-item">
+                    <div class="roadmap-step">STEP ${index + 1}</div>
+                    <div class="roadmap-text">${escapeHtml(item)}</div>
+                  </div>
+                `)
+                .join("")
+            : `<div class="empty-state">로드맵 항목이 없습니다.</div>`}
+        </div>
+      </section>
     </section>
   `);
-  document.getElementById("back-to-graph").addEventListener("click", () => { state.view = "result"; render(); });
-}
 
+  document.getElementById("back-to-graph").addEventListener("click", () => {
+    state.view = "result";
+    render();
+  });
+}
 function render() {
   if (state.view === "loading") return renderLoading();
   if (state.view === "error") return renderError();
