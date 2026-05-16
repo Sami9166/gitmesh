@@ -1,42 +1,41 @@
 # GitMesh Backend
 
-FastAPI backend for GitHub repository collection and Upstage/Solar LLM-based GitMesh analysis.
+GitMesh Backend는 FastAPI 기반 서버입니다.
 
-## Setup
+역할은 다음과 같습니다.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-```
+1. GitHub public repository 수집
+2. 업로드 파일 수집
+3. Upstage/Solar API를 통한 graph 생성
+4. 선택한 repository 또는 파일에 대한 AI 분석
+5. frontend에 graph와 report JSON 제공
 
-Required:
+---
 
-```env
-UPSTAGE_API_KEY=your_upstage_api_key
-UPSTAGE_MODEL=solar-pro3
-UPSTAGE_BASE_URL=https://api.upstage.ai/v1
-```
+## 기술 스택
 
-Optional:
+- Python
+- FastAPI
+- Pydantic
+- httpx
+- python-dotenv
+- OpenAI-compatible client
+- Upstage/Solar API
+- GitHub REST API
 
-```env
-GITHUB_TOKEN=your_github_token_for_higher_rate_limit
-```
+---
 
-## Run
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-## API
+## 폴더 구조
 
 ```text
-GET  /health
-POST /github/analyze-user?username=<github_id>&limit=12
-GET  /github/{username}/repos?limit=20
-```
+backend/
+  README.md
+  requirements.txt
+  .env.example
 
-No rule-based fallback is used. If Upstage fails, the API returns an error response and the web app shows an error page.
+  app/
+    __init__.py
+    main.py
+    github_client.py
+    llm_analyzer.py
+    models.py
