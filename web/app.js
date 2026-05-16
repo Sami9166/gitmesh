@@ -143,7 +143,7 @@ function renderHome() {
             <label class="file-drop compact-file-drop">
               <input id="project-files" type="file" multiple />
               <div class="file-drop-title">프로젝트 파일 추가</div>
-              <div class="file-drop-desc">README, 기획서, 코드, JSON/YAML, TXT/MD 파일을 업로드할 수 있습니다.</div>
+              <div class="file-drop-desc">pdf, img, 마크다운, 코드 등을 업로드할 수 있습니다.</div>
             </label>
             <div id="file-list" class="file-list"></div>
             <button class="primary-btn" type="submit">파일 그래프 생성</button>
