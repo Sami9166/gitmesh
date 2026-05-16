@@ -1,6 +1,47 @@
 const API_BASE_URL =
   localStorage.getItem("GITMESH_API_BASE_URL") || "http://127.0.0.1:8000";
 
+const THEME_KEY = "GITMESH_THEME";
+
+function getInitialTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === "dark" || saved === "light") return saved;
+
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+  return prefersDark ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+}
+
+function themeLabel(theme) {
+  return theme === "dark" ? "Light" : "Dark";
+}
+
+function themeIcon(theme) {
+  return theme === "dark" ? "☀" : "☾";
+}
+
+function getGraphThemeColors() {
+  if (state.theme === "dark") {
+    return {
+      edge: "#475569",
+      active: "#f8fafc",
+      selectedBorder: "#f8fafc",
+      nodeBorder: "#e5e7eb",
+    };
+  }
+
+  return {
+    edge: "#cbd5e1",
+    active: "#111827",
+    selectedBorder: "#111827",
+    nodeBorder: "#ffffff",
+  };
+}
+
 const state = {
   view: "home", // home | loading | result | report | error
   sourceMode: "github", // github | files
@@ -15,9 +56,22 @@ const state = {
   analysisErrorByProjectId: {},
   uploadedFiles: [],
   error: null,
+  theme: getInitialTheme(),
 };
 
+applyTheme(state.theme);
+
 const app = document.getElementById("app");
+
+app.addEventListener("click", (event) => {
+  const toggle = event.target.closest("#theme-toggle");
+  if (!toggle) return;
+
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  localStorage.setItem(THEME_KEY, state.theme);
+  applyTheme(state.theme);
+  render();
+});
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -45,7 +99,13 @@ function shell(content) {
           </div>
           <span>GitMesh</span>
         </div>
-        <div class="nav-pill">GitHub & File Project Graph</div>
+        <div class="nav-actions">
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+            <span class="theme-icon">${themeIcon(state.theme)}</span>
+            <span>${themeLabel(state.theme)}</span>
+          </button>
+          <div class="nav-pill">GitHub & File Project Graph</div>
+        </div>
       </nav>
       ${content}
     </main>
@@ -181,6 +241,7 @@ function renderHome() {
 
   renderSelectedFiles();
 }
+
 function renderLoading() {
   const text = state.sourceMode === "files"
     ? "업로드한 파일들의 관계 그래프를 만들고 있어요"
@@ -376,18 +437,67 @@ function relationLabel(relation) {
   return labels[relation] || relation || "관련";
 }
 
-function nodeColor(project) {
-  const language = String(project.repo?.primary_language || "").toLowerCase();
+const GRAPH_COLOR_PALETTE = [
+  "#ef4444", // red
+  "#f97316", // orange
+  "#f59e0b", // amber
+  "#84cc16", // lime
+  "#22c55e", // green
+  "#14b8a6", // teal
+  "#06b6d4", // cyan
+  "#3b82f6", // blue
+  "#6366f1", // indigo
+  "#8b5cf6", // violet
+  "#a855f7", // purple
+  "#ec4899", // pink
+  "#f43f5e", // rose
+];
 
-  if (state.sourceMode === "files") return "#7c3aed";
-  if (language.includes("python")) return "#3182f6";
+function hashString(value) {
+  const text = String(value || "unknown");
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function paletteColor(value) {
+  const index = hashString(value) % GRAPH_COLOR_PALETTE.length;
+  return GRAPH_COLOR_PALETTE[index];
+}
+
+function nodeColor(project) {
+  const repo = project.repo || {};
+  const language = String(repo.primary_language || "").toLowerCase();
+  const name = String(repo.name || project.project_id || "").toLowerCase();
+
+  if (state.sourceMode === "files") {
+    if (name.endsWith(".md") || name.endsWith(".txt")) return "#22c55e";
+    if (name.endsWith(".json") || name.endsWith(".yaml") || name.endsWith(".yml")) return "#f59e0b";
+    if (name.endsWith(".py")) return "#3b82f6";
+    if (name.endsWith(".js") || name.endsWith(".jsx")) return "#f97316";
+    if (name.endsWith(".ts") || name.endsWith(".tsx")) return "#2563eb";
+    if (name.endsWith(".dart")) return "#06b6d4";
+    return paletteColor(name);
+  }
+
+  if (language.includes("python")) return "#3776ab";
   if (language.includes("javascript")) return "#f59e0b";
-  if (language.includes("typescript")) return "#2563eb";
+  if (language.includes("typescript")) return "#3178c6";
   if (language.includes("dart")) return "#06b6d4";
   if (language.includes("java")) return "#ef4444";
-  if (language.includes("html") || language.includes("css")) return "#10b981";
+  if (language.includes("kotlin")) return "#8b5cf6";
+  if (language.includes("swift")) return "#f97316";
+  if (language.includes("go")) return "#14b8a6";
+  if (language.includes("rust")) return "#a16207";
+  if (language.includes("ruby")) return "#e11d48";
+  if (language.includes("php")) return "#6366f1";
+  if (language.includes("html")) return "#f97316";
+  if (language.includes("css")) return "#3b82f6";
+  if (language.includes("jupyter")) return "#ec4899";
 
-  return "#64748b";
+  return paletteColor(repo.full_name || repo.name || project.project_id);
 }
 
 function buildCytoscapeElements() {
@@ -433,6 +543,7 @@ function mountCytoscapeGraph() {
   }
 
   const elements = buildCytoscapeElements();
+  const graphColors = getGraphThemeColors();
 
   const cy = cytoscape({
     container,
@@ -458,22 +569,22 @@ function mountCytoscapeGraph() {
           width: 84,
           height: 84,
           "border-width": 4,
-          "border-color": "#ffffff",
+          "border-color": graphColors.nodeBorder,
         },
       },
       {
         selector: "node:selected",
         style: {
           "border-width": 6,
-          "border-color": "#111827",
+          "border-color": graphColors.selectedBorder,
         },
       },
       {
         selector: "edge",
         style: {
           width: "mapData(weight, 0, 1, 1.5, 5)",
-          "line-color": "#cbd5e1",
-          "target-arrow-color": "#cbd5e1",
+          "line-color": graphColors.edge,
+          "target-arrow-color": graphColors.edge,
           "target-arrow-shape": "triangle",
           "curve-style": "bezier",
           label: "",
@@ -484,10 +595,10 @@ function mountCytoscapeGraph() {
       {
         selector: "edge.active",
         style: {
-          "line-color": "#3182f6",
-          "target-arrow-color": "#3182f6",
+          "line-color": graphColors.active,
+          "target-arrow-color": graphColors.active,
           width: 5,
-          color: "#1b64da",
+          color: graphColors.active,
         },
       },
       {
@@ -844,6 +955,7 @@ function renderReportPage() {
     render();
   });
 }
+
 function render() {
   if (state.view === "loading") return renderLoading();
   if (state.view === "error") return renderError();
