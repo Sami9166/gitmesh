@@ -5,6 +5,94 @@
 GitMesh는 **프로젝트의 끝**을 **또다른 시작**으로 바꿔줍니다.
 
 ---
+## Get Started
+
+### 1. Clone repository
+
+```bash
+git clone https://github.com/Sami9166/gitmesh.git
+cd gitmesh
+```
+
+---
+
+### 2. Backend setup
+
+```bash
+cd backend
+
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+Backend dependencies include FastAPI, Uvicorn, httpx, python-dotenv, OpenAI-compatible client, and python-multipart.
+
+---
+
+### 3. Create `.env`
+
+Create a `.env` file inside the `backend/` directory.
+
+```bash
+# backend/.env
+
+UPSTAGE_API_KEY=your_upstage_api_key_here
+UPSTAGE_MODEL=solar-mini
+UPSTAGE_BASE_URL=https://api.upstage.ai/v1
+
+# Optional: increases GitHub API rate limit
+GITHUB_TOKEN=your_github_token_here
+```
+
+`UPSTAGE_API_KEY` is required for graph generation and AI analysis. `GITHUB_TOKEN` is optional, but recommended when scanning multiple repositories.
+
+---
+
+### 4. Run backend server
+
+```bash
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Check if the backend is running:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+### 5. Run frontend
+
+Open a new terminal.
+
+```bash
+cd web
+python -m http.server 5500
+```
+
+Then open:
+
+```text
+http://127.0.0.1:5500
+```
+
+---
 
 ## 주요 기능
 
