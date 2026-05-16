@@ -31,8 +31,9 @@ class LLMAnalysisError(RuntimeError):
 
 SINGLE_REPO_SYSTEM_PROMPT = """
 You are GitMesh, an expert AI product strategist and software architect.
-Analyze one GitHub repository deeply and produce Project DNA, reusable asset cards,
-and a practical development report.
+Analyze one GitHub repository deeply. The user-facing analysis must be organized into exactly three pillars:
+1) Asset Card, 2) Develop Point, 3) Roadmap.
+Project DNA may still be returned as compact metadata, but the main value must come from assets, develop_points, and roadmap-style next_builds.
 Return ONLY a valid JSON object. Do not include markdown, code fences, comments, or prose outside JSON.
 Use Korean for natural-language values.
 """.strip()
@@ -63,7 +64,9 @@ Use Korean for reason, label, and summary values.
 
 SINGLE_FILE_SYSTEM_PROMPT = """
 You are GitMesh File Project Analyzer.
-Analyze one uploaded file as a project artifact. Produce Project DNA, reusable asset cards, and a practical development report based only on the file content.
+Analyze one uploaded file as a project artifact. The user-facing analysis must be organized into exactly three pillars:
+1) Asset Card, 2) Develop Point, 3) Roadmap.
+Project DNA may still be returned as compact metadata, but the main value must come from assets, develop_points, and roadmap-style next_builds.
 Return ONLY a valid JSON object. Do not include markdown, code fences, comments, or prose outside JSON.
 Use Korean for natural-language values.
 """.strip()
@@ -238,9 +241,9 @@ def _build_graph_prompt(username: str, repos: list[RepoSummary]) -> str:
         "rules": [
             "Use only repository metadata in the input. Do not assume file contents.",
             "All source_project_id and target_project_id must exactly match input project_id values.",
-            "Prefer meaningful relationships over many weak edges. Create at most 24 edges.",
+            "Prefer meaningful relationships over many weak edges. Create at most 14 edges.",
             "If repositories are unrelated, create fewer edges rather than forcing relationships.",
-            "Create at most 5 next_builds. A next_build must combine at least 2 repositories.",
+            "Create at most 3 next_builds. A next_build must combine at least 2 repositories.",
             "Return strict JSON only.",
         ],
         "output_schema": schema,
@@ -273,7 +276,7 @@ def _build_file_graph_prompt(files: list[UploadedFileSummary]) -> str:
         "rules": [
             "Use uploaded file names, mime types, and text excerpts only.",
             "All source_project_id and target_project_id must exactly match input project_id values.",
-            "Create at most 20 edges.",
+            "Create at most 14 edges.",
             "Create at most 5 next_builds.",
             "Return strict JSON only.",
         ],
@@ -313,15 +316,19 @@ def _build_single_repo_prompt(repo: RepoSummary, important_files: list[SelectedF
         "project_id": "repo_<repo_id>",
         "dna": {"domain": ["최대 3개"], "target_user": "주요 사용자", "core_problem": "이 프로젝트가 해결하려는 핵심 문제", "core_features": ["핵심 기능 3~6개"], "tech_stack": ["기술 스택 3~8개"], "summary": "프로젝트 요약 1~2문장"},
         "assets": [{"name": "재사용 가능한 자산명", "type": "Code | UI | Prompt | Data | Architecture | Domain Knowledge | Documentation", "reuse_score": 0.0, "reusable_for": ["재사용 가능한 프로젝트/도메인"], "improvement_needed": ["재사용 전 보완점"]}],
-        "report": {"limitations": ["한계점"], "develop_points": ["구체적인 개선/고도화 포인트"], "keep": ["유지할 것"], "modify": ["수정할 것"], "drop": ["버리거나 후순위로 둘 것"], "next_builds": ["이 repo에서 이어질 수 있는 다음 프로젝트 후보"], "file_tree_suggestion": ["추천 폴더/파일 구조 라인"]},
+        "report": {"limitations": ["내부 진단용 한계점"], "develop_points": ["구체적인 개선/고도화 포인트 8~10개"], "keep": ["내부 진단용 유지할 것"], "modify": ["내부 진단용 수정할 것"], "drop": ["내부 진단용 후순위"], "next_builds": ["Roadmap 단계 5~7개: 무엇을 어떤 순서로 구현할지"], "file_tree_suggestion": ["내부 진단용 구조 제안"]},
     }
     instruction = {
         "task": "Analyze this GitHub repository and produce GitMesh single-repo JSON.",
         "rules": [
             "Use only repository information in the input.",
             "repo_id and project_id must match input values.",
-            "Create 2-5 high-quality asset cards.",
-            "Create practical develop_points, not generic advice.",
+            "Create 3-5 high-quality asset cards. Each asset must be reusable and specific to this repo.",
+            "Prioritize report.develop_points. Generate 8-10 concrete develop_points. Each point must explain what to improve, why it matters, and how to implement it.",
+            "Use report.next_builds as the Roadmap section. Generate 5-7 ordered roadmap steps, not vague next-project ideas.",
+            "Roadmap items should be practical execution steps such as refactor, API separation, UI improvement, validation, deployment, user testing, or metric tracking.",
+            "Avoid generic advice such as 'improve documentation' unless you specify exactly what should be documented and where.",
+            "Do not focus on explaining which files were read. Use selected files only as hidden evidence for the analysis.",
             "Return strict JSON only.",
         ],
         "output_schema": schema,
@@ -337,15 +344,17 @@ def _build_single_file_prompt(file: UploadedFileSummary) -> str:
         "project_id": "file_<file_id>",
         "dna": {"domain": ["최대 3개"], "target_user": "주요 사용자", "core_problem": "이 파일/문서가 다루는 핵심 문제", "core_features": ["핵심 내용/기능/구성 3~6개"], "tech_stack": ["파일에서 확인되는 기술/도구/방법론"], "summary": "파일 요약 1~2문장"},
         "assets": [{"name": "재사용 가능한 자산명", "type": "Code | UI | Prompt | Data | Architecture | Domain Knowledge | Documentation | Planning", "reuse_score": 0.0, "reusable_for": ["재사용 가능한 프로젝트/도메인"], "improvement_needed": ["재사용 전 보완점"]}],
-        "report": {"limitations": ["한계점"], "develop_points": ["구체적인 개선/고도화 포인트"], "keep": ["유지할 것"], "modify": ["수정할 것"], "drop": ["버리거나 후순위로 둘 것"], "next_builds": ["이 파일에서 이어질 수 있는 다음 프로젝트 후보"], "file_tree_suggestion": ["추천 산출물/문서 구조 라인"]},
+        "report": {"limitations": ["내부 진단용 한계점"], "develop_points": ["구체적인 개선/고도화 포인트 8~10개"], "keep": ["내부 진단용 유지할 것"], "modify": ["내부 진단용 수정할 것"], "drop": ["내부 진단용 후순위"], "next_builds": ["Roadmap 단계 5~7개: 무엇을 어떤 순서로 구현할지"], "file_tree_suggestion": ["내부 진단용 구조 제안"]},
     }
     instruction = {
         "task": "Analyze this uploaded project artifact as a GitMesh file project.",
         "rules": [
             "Use only uploaded file content in the input.",
             "repo_id and project_id must match input values.",
-            "Create 2-5 asset cards.",
-            "Make develop_points concrete and grounded in the file content.",
+            "Create 3-5 high-quality asset cards grounded in the uploaded file.",
+            "Prioritize report.develop_points. Generate 8-10 concrete develop_points. Each point must explain what to improve, why it matters, and how to implement it.",
+            "Use report.next_builds as the Roadmap section. Generate 5-7 ordered roadmap steps, not vague next-project ideas.",
+            "Make develop_points and roadmap concrete and grounded in the file content. Avoid generic advice.",
             "Return strict JSON only.",
         ],
         "output_schema": schema,
@@ -567,12 +576,12 @@ def _project_from_llm(project: dict[str, Any], repo: RepoSummary, selected_files
         raise LLMAnalysisError(f"{repo.name} 분석 결과의 asset이 비어 있습니다.")
 
     report = DevelopReport(
-        limitations=_as_str_list(report_raw.get("limitations"), max_items=7),
-        develop_points=_as_str_list(report_raw.get("develop_points"), max_items=7),
+        limitations=_as_str_list(report_raw.get("limitations"), max_items=8),
+        develop_points=_as_str_list(report_raw.get("develop_points"), max_items=10),
         keep=_as_str_list(report_raw.get("keep"), max_items=6),
         modify=_as_str_list(report_raw.get("modify"), max_items=6),
         drop=_as_str_list(report_raw.get("drop"), max_items=6),
-        next_builds=_as_str_list(report_raw.get("next_builds"), max_items=6),
+        next_builds=_as_str_list(report_raw.get("next_builds"), max_items=8),
         file_tree_suggestion=_as_str_list(report_raw.get("file_tree_suggestion"), max_items=14),
     )
 
